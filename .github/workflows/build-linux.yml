@@ -2,7 +2,7 @@
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/multi-account-usage-widget-yjwmeb]
     tags: ['v*']
   pull_request:
     branches: [main]
