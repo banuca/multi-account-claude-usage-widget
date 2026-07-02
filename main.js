@@ -3,9 +3,10 @@ const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
+const { computeWorstAccount, createLegacyAccountMigration } = require('./src/account-logic');
 
-const GITHUB_OWNER = 'SlavomirDurej';
-const GITHUB_REPO = 'claude-usage-widget';
+const GITHUB_OWNER = 'banuca';
+const GITHUB_REPO = 'multi-account-claude-usage-widget';
 
 // Migration: Handle old encrypted config files from v1.7.0 and earlier
 // Must happen BEFORE creating Store instance to prevent parse errors
@@ -257,20 +258,26 @@ function migrateLegacyAccount() {
   if (!legacyKey) legacyKey = store.get('sessionKey', null);
   const legacyOrg = store.get('organizationId', null);
 
-  if (legacyKey && legacyOrg) {
-    const id = nextAccountId();
-    saveAccountKey(id, legacyKey);
-    setAccounts([{ id, label: 'Personal', orgId: legacyOrg, organizations: [] }]);
-    debugLog('[Migration] Migrated legacy single account into accounts[0], id', id);
+  const migration = createLegacyAccountMigration({
+    legacyKey,
+    legacyOrg,
+    id: legacyKey && legacyOrg ? nextAccountId() : null
+  });
+
+  if (migration.sessionKeyByAccount) {
+    saveAccountKey(migration.sessionKeyByAccount.id, migration.sessionKeyByAccount.sessionKey);
+    debugLog('[Migration] Migrated legacy single account into accounts[0], id', migration.sessionKeyByAccount.id);
   } else {
     // Nothing to migrate — initialise an empty list so this never runs again.
-    setAccounts([]);
   }
+  setAccounts(migration.accounts);
 
   // Clear legacy single-account keys regardless (their data now lives per-account).
-  store.delete('sessionKey');
-  store.delete('sessionKey_encrypted');
-  store.delete('organizationId');
+  if (migration.clearLegacyKeys) {
+    store.delete('sessionKey');
+    store.delete('sessionKey_encrypted');
+    store.delete('organizationId');
+  }
 }
 
 function createMainWindow() {
@@ -827,25 +834,6 @@ function formatResetTime(resetsAt, timeFormat, includeDate = false) {
  * Update tray icons with current usage data
  * @param {Object} usageData - Usage data object containing session and weekly percentages
  */
-// Pick the account closest to a limit — the highest max(session, weekly) across
-// all polled accounts. Returns null when no account has usage data yet.
-function computeWorstAccount() {
-  let worst = null;
-  let worstVal = -1;
-  for (const a of getAccounts()) {
-    const d = latestUsageByAccount[a.id];
-    if (!d) continue;
-    const sessionPct = d.five_hour?.utilization || 0;
-    const weeklyPct = d.seven_day?.utilization || 0;
-    const m = Math.max(sessionPct, weeklyPct);
-    if (m > worstVal) {
-      worstVal = m;
-      worst = { account: a, data: d, sessionPct, weeklyPct };
-    }
-  }
-  return worst;
-}
-
 // One short tooltip line per account, e.g. "Personal: S 45% / W 60%".
 function trayTooltipLines() {
   return getAccounts().map((a) => {
@@ -887,7 +875,7 @@ function updateTrayRollup() {
   const warnThreshold = store.get('settings.warnThreshold', 75);
   const dangerThreshold = store.get('settings.dangerThreshold', 90);
 
-  const worst = computeWorstAccount();
+  const worst = computeWorstAccount(getAccounts(), latestUsageByAccount);
   const sessionPercent = worst ? worst.sessionPct : 0;
   const weeklyPercent = worst ? worst.weeklyPct : 0;
 

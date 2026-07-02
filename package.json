@@ -1,14 +1,13 @@
 {
   "name": "claude-usage-widget",
   "version": "1.7.5",
-  "description": "Desktop widget for Claude.ai usage monitoring",
+  "description": "Desktop widget for monitoring Claude.ai usage across multiple accounts",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "dev": "cross-env NODE_ENV=development electron .",
-    "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux"
   },
   "keywords": [
@@ -25,7 +24,6 @@
     "npm": ">=9.0.0"
   },
   "devDependencies": {
-    "@electron/notarize": "^3.1.1",
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1"
@@ -62,31 +60,6 @@
       "!**/*.ts",
       "!*.md"
     ],
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": {
-        "teamId": "X84UXCNLPX"
-      },
-      "extendInfo": {
-        "NSHumanReadableCopyright": "Copyright ┬⌐ 2025 Slavomir Durej"
-      }
-    },
-    "dmg": {
-      "artifactName": "${productName}-${version}-macOS-${arch}.dmg"
-    },
     "linux": {
       "target": [
         {
