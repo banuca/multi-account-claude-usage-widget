@@ -62,7 +62,8 @@ let weeklyTray = null;   // Tray icon for Weekly usage
 // rebuilt as each account is polled.
 const latestUsageByAccount = {};
 
-const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
+// 400px matches the redesign mockup's widget proportions (gauge + details).
+const WIDGET_WIDTH = 400;
 const WIDGET_HEIGHT = 155;
 const HISTORY_RETENTION_DAYS = 8;
 const CHART_DAYS = 7;
@@ -1107,7 +1108,7 @@ ipcMain.handle('set-window-position', (event, { x, y }) => {
 
 ipcMain.on('open-external', (event, url) => {
   // Trust boundary enforcement: duplicate allowlist check in main process
-  const allowedDomains = ['claude.ai', 'github.com', 'paypal.me'];
+  const allowedDomains = ['claude.ai', 'github.com', 'buymeacoffee.com'];
   try {
     const parsedUrl = new URL(url);
     const isAllowed = allowedDomains.some(domain => 
@@ -1162,7 +1163,7 @@ ipcMain.handle('get-settings', () => {
     autoStart: store.get('settings.autoStart', false),
     minimizeToTray: store.get('settings.minimizeToTray', false),
     alwaysOnTop: store.get('settings.alwaysOnTop', true),
-    theme: store.get('settings.theme', 'dark'),
+    theme: store.get('settings.theme', 'aurora'),
     warnThreshold: store.get('settings.warnThreshold', 75),
     dangerThreshold: store.get('settings.dangerThreshold', 90),
     timeFormat: store.get('settings.timeFormat', '12h'),

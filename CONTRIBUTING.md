@@ -291,8 +291,8 @@ For maintainers only. See `RELEASE_PROCESS.md` for details.
 
 ## Questions?
 
-- Open a [Discussion](https://github.com/SlavomirDurej/claude-usage-widget/discussions)
-- Check existing [Issues](https://github.com/SlavomirDurej/claude-usage-widget/issues)
+- Open a [Discussion](https://github.com/banuca/multi-account-claude-usage-widget/discussions)
+- Check existing [Issues](https://github.com/banuca/multi-account-claude-usage-widget/issues)
 - Review [Changelog](CHANGELOG.md) for recent changes
 
 ---

@@ -25,10 +25,72 @@ let pendingValidation = null;         // { sessionKey, organizations } awaiting 
 
 // Fork release page (in-app update check + banner link)
 const RELEASES_URL = 'https://github.com/banuca/multi-account-claude-usage-widget/releases/latest';
-const SETTINGS_HEIGHT = 460;          // window height while the settings panel is open
+const SETTINGS_HEIGHT = 690;          // window height while the settings panel is open
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
 const GRAPH_HEIGHT = 232;
+
+// ── Theme system ─────────────────────────────────────────────────────────────
+// Five named themes. Values are copied verbatim from the redesign mockup's
+// `themes` object — the mockup is the source of truth for every neutral/accent.
+// Status colors (green/amber/red) are NOT here: they're fixed CSS constants so
+// the limit signal reads the same in every theme (see :root in styles.css).
+const THEMES = {
+    aurora: {
+        label: 'Aurora', dot: '#D97757',
+        bg: 'rgba(38,34,32,.85)', bg2: 'rgba(24,21,20,.92)',
+        surface: 'rgba(255,255,255,.035)', border: 'rgba(255,255,255,.07)', line: 'rgba(255,255,255,.06)',
+        text: '#f4efeb', muted: '#a9a19a', faint: '#7a726b',
+        accentGrad: 'linear-gradient(140deg,#e08663,#c25f42)', accentSolid: '#e08663', accentInk: '#fff',
+        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.09)', track: 'rgba(255,255,255,.08)',
+        shadow: '0 30px 60px -20px rgba(0,0,0,.6)'
+    },
+    midnight: {
+        label: 'Midnight', dot: '#6d9bff',
+        bg: 'rgba(26,29,43,.86)', bg2: 'rgba(17,19,30,.93)',
+        surface: 'rgba(255,255,255,.045)', border: 'rgba(255,255,255,.09)', line: 'rgba(255,255,255,.07)',
+        text: '#eef1f7', muted: '#9aa2b8', faint: '#69708a',
+        accentGrad: 'linear-gradient(140deg,#7ba6ff,#4a6fd8)', accentSolid: '#7ba6ff', accentInk: '#0d1220',
+        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.08)', track: 'rgba(255,255,255,.07)',
+        shadow: '0 30px 60px -20px rgba(6,9,26,.65)'
+    },
+    nebula: {
+        label: 'Nebula', dot: '#b47ffb',
+        bg: 'rgba(33,26,46,.86)', bg2: 'rgba(22,15,31,.93)',
+        surface: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.1)', line: 'rgba(255,255,255,.08)',
+        text: '#f2eef8', muted: '#a99cc0', faint: '#786a8c',
+        accentGrad: 'linear-gradient(140deg,#c08cff,#8a4fe0)', accentSolid: '#c08cff', accentInk: '#160f22',
+        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.08)', track: 'rgba(255,255,255,.07)',
+        shadow: '0 30px 60px -20px rgba(15,6,28,.7)'
+    },
+    terminal: {
+        label: 'Terminal', dot: '#7fdca4',
+        bg: '#0b0b0d', bg2: '#0b0b0d',
+        surface: '#111116', border: '#20202a', line: '#191920',
+        text: '#e6e6ea', muted: '#8a8a96', faint: '#565662',
+        accentGrad: 'linear-gradient(140deg,#8be6ad,#4fb07e)', accentSolid: '#7fdca4', accentInk: '#07130c',
+        chip: '#111116', ringTrack: 'rgba(255,255,255,.07)', track: '#20202a',
+        shadow: '0 30px 60px -20px rgba(0,0,0,.8)'
+    },
+    daylight: {
+        label: 'Daylight', dot: '#D97757',
+        bg: '#fbf7f1', bg2: '#f1e9de',
+        surface: '#ffffff', border: '#efe4d6', line: '#efe5d7',
+        text: '#2b2622', muted: '#7c7062', faint: '#a89a8a',
+        accentGrad: 'linear-gradient(140deg,#e07a5a,#c96144)', accentSolid: '#c96144', accentInk: '#fff',
+        chip: '#f2ebe1', ringTrack: '#efe6da', track: '#efe6da',
+        shadow: '0 24px 50px -18px rgba(80,50,30,.28)'
+    }
+};
+
+// Map any stored theme value to a valid theme key. Legacy installs stored
+// 'dark' / 'light' / 'system' — fold those into the closest new theme so the
+// upgrade is seamless.
+function normalizeTheme(theme) {
+    if (THEMES[theme]) return theme;
+    if (theme === 'light') return 'daylight';
+    return 'aurora'; // dark / system / undefined
+}
 
 // Debug logging — only shows in DevTools (development mode).
 // Regular users won't see verbose logs in production.
@@ -223,15 +285,18 @@ function setupEventListeners() {
     });
 
     elements.coffeeBtn.addEventListener('click', () => {
-        window.electronAPI.openExternal('https://paypal.me/SlavomirDurej?country.x=GB&locale.x=en_GB');
+        window.electronAPI.openExternal('https://buymeacoffee.com/banuca');
     });
 
-    // Theme buttons
+    // Theme chips — apply live and persist immediately so the choice survives
+    // even if the user closes the panel without pressing Done.
     elements.themeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            elements.themeBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+        btn.addEventListener('click', async () => {
             applyTheme(btn.dataset.theme);
+            const settings = window._cachedSettings || await window.electronAPI.getSettings();
+            settings.theme = currentTheme;
+            window._cachedSettings = settings;
+            await window.electronAPI.saveSettings(settings);
         });
     });
 
@@ -511,15 +576,12 @@ function renderAccountCard(account) {
     const els = {
         label: card.querySelector('.account-label'),
         reconnectBtn: card.querySelector('.account-reconnect-btn'),
-        sessionProgress: card.querySelector('.session-progress'),
+        sessionRing: card.querySelector('.session-ring'),
         sessionPercentage: card.querySelector('.session-percentage'),
-        sessionTimer: card.querySelector('.session-timer'),
-        sessionTimeText: card.querySelector('.session-time-text'),
         sessionResetsAt: card.querySelector('.session-resets-at'),
-        weeklyProgress: card.querySelector('.weekly-progress'),
+        statusText: card.querySelector('.status-text'),
+        weeklyFill: card.querySelector('.weekly-progress'),
         weeklyPercentage: card.querySelector('.weekly-percentage'),
-        weeklyTimer: card.querySelector('.weekly-timer'),
-        weeklyTimeText: card.querySelector('.weekly-time-text'),
         weeklyResetsAt: card.querySelector('.weekly-resets-at')
     };
 
@@ -530,35 +592,89 @@ function renderAccountCard(account) {
     cardsById.set(account.id, { card, els });
 }
 
-// Update one card's bars, percentages, timers and reset labels.
+// Gauge geometry — r=34 ⇒ circumference 2π·34 ≈ 213.6 (matches the mockup's
+// stroke-dasharray). Offset shrinks as utilization grows (100% ⇒ offset 0).
+const GAUGE_CIRCUMFERENCE = 213.6;
+
+// Fixed status thresholds → one of 'healthy' | 'warn' | 'limit'.
+// warn/danger come from the user's settings (same values the old bars used).
+function statusFor(pct) {
+    if (pct >= dangerThreshold) return 'limit';
+    if (pct >= warnThreshold) return 'warn';
+    return 'healthy';
+}
+const STATUS_RANK = { healthy: 0, warn: 1, limit: 2 };
+const STATUS_LABEL = { healthy: 'HEALTHY', warn: 'WARN', limit: 'AT LIMIT' };
+function worstStatus(a, b) { return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b; }
+
+// "6d 7h" / "4h 11m" / "1m" — remaining time until a reset (mockup style).
+function formatRemaining(resetsAt) {
+    if (!resetsAt) return '';
+    const diff = new Date(resetsAt) - new Date();
+    if (diff <= 0) return 'now';
+    const totalMinutes = Math.floor(diff / 60000);
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+}
+
+// Update one card: circular session gauge, status chip, session-reset line,
+// weekly bar + weekly-reset line. Status colors are fixed; the card's overall
+// status (worst of session/weekly) drives the ring, chip and at-limit tint,
+// while the weekly bar is colored by its own utilization.
 function updateAccountCard(accountId, data) {
     const entry = cardsById.get(accountId);
     if (!entry) return;
-    const { els } = entry;
+    const { card, els } = entry;
     const settings = window._cachedSettings || {};
     const timeFormat = settings.timeFormat || '12h';
     const weeklyDateFormat = settings.weeklyDateFormat || 'date';
 
-    const sessionUtil = data?.five_hour?.utilization || 0;
+    const sessionUtil = Math.min(Math.max(data?.five_hour?.utilization || 0, 0), 100);
     const sessionResetsAt = data?.five_hour?.resets_at;
-    const weeklyUtil = data?.seven_day?.utilization || 0;
+    const weeklyUtil = Math.min(Math.max(data?.seven_day?.utilization || 0, 0), 100);
     const weeklyResetsAt = data?.seven_day?.resets_at;
 
-    updateProgressBar(els.sessionProgress, els.sessionPercentage, sessionUtil);
-    updateTimer(els.sessionTimer, els.sessionTimeText, sessionResetsAt, 5 * 60);
-    els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
-    els.sessionResetsAt.style.opacity = sessionResetsAt ? '1' : '0.4';
+    // Session gauge
+    els.sessionPercentage.textContent = Math.round(sessionUtil);
+    els.sessionRing.style.strokeDashoffset = GAUGE_CIRCUMFERENCE * (1 - sessionUtil / 100);
 
-    updateProgressBar(els.weeklyProgress, els.weeklyPercentage, weeklyUtil, true);
-    updateTimer(els.weeklyTimer, els.weeklyTimeText, weeklyResetsAt, 7 * 24 * 60);
-    els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
-    els.weeklyResetsAt.style.opacity = weeklyResetsAt ? '1' : '0.4';
+    // Statuses
+    const sessionStatus = statusFor(sessionUtil);
+    const weeklyStatus = statusFor(weeklyUtil);
+    const overall = worstStatus(sessionStatus, weeklyStatus);
+    card.classList.remove('status-healthy', 'status-warn', 'status-limit');
+    card.classList.add('status-' + overall);
+    els.statusText.textContent = STATUS_LABEL[overall];
 
-    updateWorstBadge();
+    // Session reset line: "1m · 4:20 PM"
+    if (sessionResetsAt) {
+        els.sessionResetsAt.textContent = `${formatRemaining(sessionResetsAt)} · ${formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat)}`;
+    } else {
+        els.sessionResetsAt.textContent = '—';
+    }
+
+    // Weekly bar + reset line: "6d 7h left · Jul 9"
+    els.weeklyFill.style.width = `${weeklyUtil}%`;
+    els.weeklyFill.classList.remove('warn', 'limit');
+    if (weeklyStatus === 'limit') els.weeklyFill.classList.add('limit');
+    else if (weeklyStatus === 'warn') els.weeklyFill.classList.add('warn');
+    els.weeklyPercentage.textContent = `${Math.round(weeklyUtil)}%`;
+    if (weeklyResetsAt) {
+        els.weeklyResetsAt.textContent = `${formatRemaining(weeklyResetsAt)} left · ${formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat)}`;
+    } else {
+        els.weeklyResetsAt.textContent = '—';
+    }
+
+    updateWidgetFooter();
     if (!isCompactMode) resizeWidget();
 }
 
-// Recompute the circular timers/countdowns for every card (called on an interval).
+// Recompute the reset lines for every card (called on an interval so the
+// "remaining" countdowns stay fresh between polls).
 function refreshAllCardTimers() {
     const settings = window._cachedSettings || {};
     const timeFormat = settings.timeFormat || '12h';
@@ -571,26 +687,27 @@ function refreshAllCardTimers() {
         const { els } = entry;
         const sessionResetsAt = data?.five_hour?.resets_at;
         const weeklyResetsAt = data?.seven_day?.resets_at;
-        updateTimer(els.sessionTimer, els.sessionTimeText, sessionResetsAt, 5 * 60);
-        els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
-        updateTimer(els.weeklyTimer, els.weeklyTimeText, weeklyResetsAt, 7 * 24 * 60);
-        els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
+        els.sessionResetsAt.textContent = sessionResetsAt
+            ? `${formatRemaining(sessionResetsAt)} · ${formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat)}`
+            : '—';
+        els.weeklyResetsAt.textContent = weeklyResetsAt
+            ? `${formatRemaining(weeklyResetsAt)} left · ${formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat)}`
+            : '—';
     }
 }
 
-// Highlight the card closest to a limit (max session/weekly across accounts).
-function updateWorstBadge() {
-    let worstId = null;
-    let worstVal = -1;
-    for (const account of accounts) {
-        const d = usageByAccount[account.id];
-        if (!d) continue;
-        const m = Math.max(d.five_hour?.utilization || 0, d.seven_day?.utilization || 0);
-        if (m > worstVal) { worstVal = m; worstId = account.id; }
-    }
-    for (const [id, entry] of cardsById) {
-        entry.card.classList.toggle('worst', id === worstId && accounts.length > 1);
-    }
+// Footer line: "Updated 12:07 · refresh 1m" + the "Unofficial" note.
+function updateWidgetFooter() {
+    const footer = document.getElementById('widgetFooter');
+    const updated = document.getElementById('widgetUpdated');
+    if (!footer || !updated) return;
+    const settings = window._cachedSettings || {};
+    const timeFormat = settings.timeFormat || '12h';
+    const clock = formatResetsAt(new Date().toISOString(), false, timeFormat, 'date');
+    const secs = parseInt(settings.refreshInterval || '300', 10);
+    const refreshLabel = secs >= 60 ? `${Math.round(secs / 60)}m` : `${secs}s`;
+    updated.textContent = `Updated ${clock} · refresh ${refreshLabel}`;
+    footer.style.display = accounts.length > 0 ? 'flex' : 'none';
 }
 
 function markAccountExpired(accountId) {
@@ -671,7 +788,7 @@ async function removeAccountFromUI(accountId) {
         elements.settingsOverlay.style.display = 'none';
         startAddAccount({ fromSettings: false });
     } else {
-        updateWorstBadge();
+        updateWidgetFooter();
         resizeWidget();
     }
 }
@@ -1571,10 +1688,6 @@ async function loadSettings() {
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
 
-    elements.themeBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.theme === settings.theme);
-    });
-
     applyTheme(settings.theme);
     if (window.electronAPI.platform === 'darwin') {
         document.getElementById('trayLabel').textContent = 'Hide from Dock';
@@ -1582,7 +1695,6 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-    const activeThemeBtn = document.querySelector('.theme-btn.active');
     const warn = parseInt(elements.warnThreshold.value) || 75;
     const danger = parseInt(elements.dangerThreshold.value) || 90;
 
@@ -1594,7 +1706,7 @@ async function saveSettings() {
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,
-        theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',
+        theme: currentTheme,
         warnThreshold: warn,
         dangerThreshold: danger,
         timeFormat: elements.timeFormat.value || '12h',
@@ -1620,10 +1732,61 @@ async function saveSettings() {
     startAutoUpdate();
 }
 
+// Apply a theme live: write its neutrals/accent onto the CSS custom properties
+// that every component reads, and refresh the settings theme-picker chips.
+// No restart needed — the browser recalculates all var() references instantly.
+let currentTheme = 'aurora';
 function applyTheme(theme) {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const useDark = theme === 'dark' || (theme === 'system' && prefersDark);
-    document.body.classList.toggle('theme-light', !useDark);
+    const key = normalizeTheme(theme);
+    currentTheme = key;
+    const t = THEMES[key];
+    const root = document.documentElement.style;
+
+    root.setProperty('--bg', t.bg);
+    root.setProperty('--bg2', t.bg2);
+    root.setProperty('--surface', t.surface);
+    root.setProperty('--border', t.border);
+    root.setProperty('--line', t.line);
+    root.setProperty('--text', t.text);
+    root.setProperty('--muted', t.muted);
+    root.setProperty('--faint', t.faint);
+    root.setProperty('--accent-grad', t.accentGrad);
+    root.setProperty('--accent-solid', t.accentSolid);
+    root.setProperty('--accent-ink', t.accentInk);
+    root.setProperty('--chip', t.chip);
+    root.setProperty('--ring-track', t.ringTrack);
+    root.setProperty('--track', t.track);
+    root.setProperty('--shadow', t.shadow);
+
+    renderThemePicker();
+}
+
+// Reflect the current theme in the settings picker: the selected chip takes its
+// own theme's accent (bg/border/ink + bold); others use neutral chip styling
+// with their theme's signature dot color. Mirrors the mockup's picker exactly.
+function renderThemePicker() {
+    const nameEl = document.getElementById('themePickerName');
+    if (nameEl) nameEl.textContent = THEMES[currentTheme].label;
+
+    document.querySelectorAll('#themeSelector .theme-btn').forEach(btn => {
+        const key = btn.dataset.theme;
+        const th = THEMES[key];
+        if (!th) return;
+        const on = key === currentTheme;
+        const dot = btn.querySelector('.theme-btn-dot');
+        btn.classList.toggle('active', on);
+        if (on) {
+            btn.style.background = th.accentSolid;
+            btn.style.borderColor = th.accentSolid;
+            btn.style.color = th.accentInk;
+            if (dot) dot.style.background = th.accentInk;
+        } else {
+            btn.style.background = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+            if (dot) dot.style.background = th.dot;
+        }
+    });
 }
 
 // Update check

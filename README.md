@@ -1,62 +1,54 @@
 # Claude Usage Widget
 
-A beautiful, standalone desktop widget for **Windows and Linux** that displays your Claude.ai usage statistics in real-time.
+A beautiful, standalone desktop widget for **Windows and Linux** that tracks your Claude.ai usage across **multiple accounts** in real time — with a themeable, at-a-glance card for each account.
 
-> **Fork notice:** This fork is maintained at `banuca/multi-account-claude-usage-widget` and adds multi-account monitoring for Claude personal and work accounts. The original MIT licence and copyright notice are retained.
+> **Project notice:** This is a fork maintained at `banuca/multi-account-claude-usage-widget`. It adds multi-account monitoring (e.g. personal + work) and a full themeable redesign on top of the original widget. The original MIT licence and copyright notice are retained.
 
-![Claude Usage Widget - Main](assets/screenshot-main.png)
+![Claude Usage Widget — Main](assets/screenshot-main.png)
 
 ---
 
 ## Features
 
-🎯 **Real-time Usage Tracking** — Monitor both session and weekly usage limits  
-📊 **Visual Progress Bars** — Clean, gradient progress indicators with configurable warning thresholds  
-⏱️ **Countdown Timers** — Circular timers showing time elapsed in the current session window  
-🔄 **Auto-refresh** — Updates every 5 minutes automatically, with animated refresh indicator  
-📈 **Usage History Graph** — Toggleable 7-day chart showing session and weekly trends over time  
-🌍 **Currency Support** — Extra usage displays your account's billing currency (€, £, $)  
-🎨 **Modern UI** — Sleek, draggable widget with dark and light themes  
-🔒 **Secure** — Encrypted credential storage  
-📍 **Always on Top** — User-controlled, stays visible across all workspaces  
-💾 **System Tray** — Minimizes to tray for easy access  
-⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats  
-🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds  
-🔔 **Update Notifications** — Automatic check for new releases on startup  
-🕐 **Configurable Date & Time Formats** — 12h/24h time, and flexible weekly reset date display  
-📐 **Compact Mode** — Minimal view for when you just need a quick glance  
+👥 **Multi-account monitoring** — One labelled card per account (personal, work, and more), each polled independently
+🎯 **Circular session gauge** — A ring per account showing session usage %, colored by status
+🚦 **Status chips** — Each card shows **Healthy / Warn / At limit** at a glance, with an animated at-limit pulse
+📊 **Weekly usage bar** — Weekly limit with remaining time and reset date
+🎨 **Five themes, switched live** — Aurora, Midnight, Nebula, Terminal and Daylight — pick one in Settings and it applies instantly, no restart
+🔒 **Fixed status colors** — Green/amber/red stay identical in every theme, so the limit signal is always readable; only the neutrals and accent change
+🔤 **Crafted typography** — Space Grotesk for the UI, JetBrains Mono for every number and label (both bundled — no network fonts)
+🔄 **Auto-refresh** — Configurable interval with an animated refresh indicator
+📍 **Always on top** — User-controlled, stays visible across workspaces
+💾 **System tray** — Minimize to tray, with an optional per-account usage rollup in the tray tooltip
+⚙️ **Settings panel** — Persistent preferences for accounts, theme, startup, tray, thresholds, and date/time formats
+🔔 **Update notifications** — Automatic check for new releases on startup
+🕐 **Configurable date & time formats** — 12h/24h time and flexible weekly reset date display
+🔒 **Secure** — Session keys stored locally in per-account encrypted storage
 
 ---
 
-## What's New in v1.7.0
+## What's New in v1.0.0
 
-### 🎨 Dynamic Threshold Colors
+### 🎨 Complete themeable redesign
 
-All usage bars (Session, Weekly, and Extra Usage) now respect your configured warning and danger thresholds:
-- **Green** below warning threshold
-- **Amber** at or above warning threshold
-- **Red** at or above danger threshold
+The widget has been rebuilt around a per-account card:
 
-Changes apply immediately when thresholds are adjusted in Settings.
+- A **circular session gauge** (usage % in the center) whose ring color reflects the account's status
+- A **status chip** — Healthy, Warn, or At limit — with an animated pulse when an account is maxed out
+- A **weekly usage bar** with "time left · reset date"
+- New typography: **Space Grotesk** (UI) + **JetBrains Mono** (numbers/labels), both bundled
 
-### 📈 Usage History Graph
+### 🌈 Five live themes
 
-A toggleable usage history graph now sits below the main widget. Click the graph button in the toolbar to show or hide it.
+Choose from **Aurora, Midnight, Nebula, Terminal, and Daylight** in Settings. The choice is saved and applied immediately — no restart.
 
-![Claude Usage Widget - Graph](assets/screenshot-graph.png)
+![Five themes](assets/screenshot-themes.png)
 
-- Displays up to **7 days** of collected usage data points
-- **Data points are captured each time the app refreshes** (every 5 minutes by default when running)
-- History **persists across restarts** — collected data is retained when you close and reopen the app
-- Sonnet and Extra Usage lines appear automatically when those sections are relevant
-- **Adaptive x-axis labels** — shows times for short spans, weekday+hour for medium spans, and dates for longer spans
-- Respects your **12h/24h time format** setting
-- Hover tooltip shows exact timestamp and value
+Status colors (green / amber / red) are **fixed across every theme** on purpose — only the background, surface, and accent change — so a card that's at its limit reads the same whether you're in a dark or light theme.
 
-> **Note:** The graph shows usage snapshots captured at each refresh interval while the app is running. Time periods when the app is closed are not represented on the graph.
+### 👥 Multi-account
 
-### 🌍 Currency Support
-The Extra Usage row now displays the correct currency symbol based on your account's billing currency — **€**, **£**, or **$**.
+Add as many Claude.ai accounts as you like. Each gets its own card and its own session, polled independently, so you can watch a personal and a work account side by side.
 
 > For full release history, see the [Releases](../../releases) page.
 
@@ -66,19 +58,20 @@ The Extra Usage row now displays the correct currency symbol based on your accou
 
 ### Settings Panel
 
-![Claude Usage Widget - Settings](assets/screenshot-settings.png)
+![Claude Usage Widget — Settings](assets/screenshot-settings.png)
 
+Settings options:
 
-### Settings Options
-
-- ⚙️ **Launch at startup** — Auto-start with Windows login
-- 📌 **Hide from taskbar** — Tray-only mode
-- 🎨 **Theme selector** — Dark / Light / System
-- ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
-- 🔔 **Usage alerts** — Desktop notifications at warn/danger thresholds
+- 👥 **Accounts** — Add or remove Claude.ai accounts; rename any card
+- 🎨 **Theme** — Aurora / Midnight / Nebula / Terminal / Daylight
+- 📌 **Always on top** — Keep the widget above other windows
+- ⚙️ **Launch at startup** — Auto-start with login (Windows/macOS)
+- 🫥 **Hide from taskbar** — Tray-only mode
+- 📊 **Show tray stats** — Per-account usage rollup in the tray
 - 🕐 **Time format** — 12h or 24h
 - 📅 **Date format** — Controls how the weekly reset date is displayed
-- 📐 **Compact mode** — Minimal two-bar view
+- ⏱️ **Auto-refresh** — How often usage is polled
+- ⚠️ **Warn at** — Configurable amber (warn) and red (at-limit) thresholds
 
 ---
 
@@ -91,7 +84,6 @@ The Extra Usage row now displays the correct currency symbol based on your accou
 2. Run the installer or portable exe
 3. Launch "Claude Usage Widget" from the Start Menu (installer) or directly (portable)
 4. **To launch at Windows startup (portable only):** Press `Win+R`, type `shell:startup`, and copy the portable `.exe` into that folder. To update, copy the new version in and delete the old one.
-
 
 **Linux:**
 1. Download the latest `Claude-Usage-Widget-{version}-linux-x86_64.AppImage` (Intel/AMD) or `Claude-Usage-Widget-{version}-linux-arm64.AppImage` (ARM) from [Releases](../../releases)
@@ -159,7 +151,6 @@ npm install
 npm start
 ```
 
-
 ---
 
 ## Usage
@@ -170,56 +161,60 @@ npm start
 2. Click "Add account" when prompted
 3. A browser window will open — log in to your Claude.ai account
 4. The widget will automatically capture your session
-5. Usage data will start displaying immediately
+5. Usage data starts displaying immediately
+
+Repeat "Add account" (from Settings) for each additional account you want to track.
 
 ### Widget Controls
 
 - **Drag** — Click and drag the title bar to move the widget
+- **Settings** — Click the sliders icon to open Settings
 - **Refresh** — Click the refresh icon to update data immediately
-- **Graph** — Click the graph icon to toggle usage history
 - **Minimize** — Click the minus icon to hide to system tray / dock
-- **Close** — Click the X to Close the app
+- **Close** — Click the X to close the app
 
 ### System Tray
 
-Right-click the tray icon for: Show/Hide, Refresh, account details, Settings, and Exit.
+Right-click the tray icon for: Show/Hide, Refresh, per-account details, Settings, and Exit.
 
 ---
 
 ## Understanding the Display
 
-### Current Session & Weekly Limit
+Each account card shows:
 
-| Column | Description |
-|--------|-------------|
-| Session Used | Progress bar showing usage from 0–100% |
-| Elapsed | Circular timer showing how far through the window you are |
-| Resets In | Countdown until the window resets |
-| Resets At | Actual local clock time / date when the window resets |
+| Element | Description |
+|---------|-------------|
+| Session gauge | Circular ring + % for the current 5-hour session window |
+| Status chip | Healthy / Warn / At limit for the account |
+| Session resets | Time remaining · local clock time when the session resets |
+| Week bar | Weekly limit usage, with time left · reset date |
 
-**Color Coding:**
-- 🟣 Purple: Normal usage (below warning threshold, default 75%)
-- 🟠 Orange: High usage (above warning threshold)
-- 🔴 Red: Critical usage (above danger threshold, default 90%)
+**Status colors (identical in every theme):**
+- 🟢 Green — Healthy (below the warn threshold, default 75%)
+- 🟠 Amber — Warn (at or above the warn threshold)
+- 🔴 Red — At limit (at or above the danger threshold, default 90%)
+
+The session ring and status chip use these colors; only the theme's background and accent change between themes.
 
 ---
 
 ## Privacy & Security
 
-- Credentials stored **locally only** using encrypted storage
+- Session keys stored **locally only**, in per-account encrypted storage
 - No data sent to any third-party servers
 - Only communicates with the official Claude.ai API
-- Logout clears all session data, cookies, and Electron session storage
+- Removing an account clears its session data, cookies, and Electron session partition
 
 ---
 
 ## Troubleshooting
 
-**"Session expired" keeps appearing** — That account session may have expired. Click "Reconnect" on the account card to re-authenticate.
+**"Session expired" keeps appearing** — That account's session may have expired. Click "Reconnect" on the account card to re-authenticate.
 
-**Widget not updating** — Check internet connection, click refresh manually, or try re-logging in from the tray menu.
+**Widget not updating** — Check your internet connection, click refresh manually, or reconnect the affected account.
 
-**Build errors** — Clean reinstall resolves most issues:
+**Build errors** — A clean reinstall resolves most issues:
 ```bash
 rm -rf node_modules package-lock.json
 npm install
@@ -237,29 +232,35 @@ If issues persist, open a [Support discussion](../../discussions/categories/supp
 - [x] Custom warning thresholds
 - [x] Configurable date & time formats
 - [x] Update notifications
-- [x] Usage alerts at thresholds
-- [x] Compact mode
-- [x] Usage history graph
-- [x] Currency support
+- [x] Multi-account monitoring
+- [x] Themeable redesign (5 themes)
 - [x] Organization/Teams support
 - [ ] Keyboard shortcuts
 
 ---
 
-## Contributors
+## Support
 
-Special thanks to these contributors who have improved the widget:
+If this widget is useful to you, you can support development here:
 
-- [@cwil2072](https://github.com/cwil2072) - macOS minimize/restore fix, usage history graph
-- [@dion-jy](https://github.com/dion-jy) - Login flow architecture improvements
-- [@goooseman](https://github.com/goooseman) - Login window security improvements
-- [@sergkuzn](https://github.com/sergkuzn) - Linux desktop launcher & autostart documentation
+☕ **[buymeacoffee.com/banuca](https://buymeacoffee.com/banuca)**
+
+---
+
+## Credits
+
+Built as a fork of the original Claude Usage Widget. Thanks to the upstream author and contributors whose work this builds on:
+
+- [@cwil2072](https://github.com/cwil2072) — macOS minimize/restore fix, usage history graph
+- [@dion-jy](https://github.com/dion-jy) — Login flow architecture improvements
+- [@goooseman](https://github.com/goooseman) — Login window security improvements
+- [@sergkuzn](https://github.com/sergkuzn) — Linux desktop launcher & autostart documentation
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
+This project is licensed under the [MIT License](LICENSE) — see the LICENSE file for details.
 
 ---
 

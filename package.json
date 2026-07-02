@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "Desktop widget for monitoring Claude.ai usage across multiple accounts",
   "main": "main.js",
   "scripts": {
@@ -16,9 +16,9 @@
     "widget",
     "electron"
   ],
-  "author": "Slavomir Durej",
+  "author": "Bhanuka Kirinde (banuca)",
   "license": "MIT",
-  "copyright": "Copyright ┬⌐ 2025 Slavomir Durej",
+  "copyright": "Copyright © 2026 Bhanuka Kirinde",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
@@ -35,7 +35,7 @@
   "build": {
     "appId": "com.claudeusage.widget",
     "productName": "Claude-Usage-Widget",
-    "copyright": "Copyright ┬⌐ 2025 Slavomir Durej",
+    "copyright": "Copyright © 2026 Bhanuka Kirinde",
     "publish": null,
     "win": {
       "target": [
