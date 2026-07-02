@@ -20,12 +20,15 @@ function isAllowedExternalUrl(url) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Credentials management
-  getCredentials: () => ipcRenderer.invoke('get-credentials'),
-  saveCredentials: (credentials) => ipcRenderer.invoke('save-credentials', credentials),
-  deleteCredentials: () => ipcRenderer.invoke('delete-credentials'),
-  validateSessionKey: (sessionKey) => ipcRenderer.invoke('validate-session-key', sessionKey),
-  detectSessionKey: () => ipcRenderer.invoke('detect-session-key'),
+  // Account management (multi-account)
+  getAccounts: () => ipcRenderer.invoke('get-accounts'),
+  createDraftAccount: () => ipcRenderer.invoke('create-draft-account'),
+  saveAccount: (account) => ipcRenderer.invoke('save-account', account),
+  removeAccount: (id) => ipcRenderer.invoke('remove-account', id),
+  renameAccount: (id, label) => ipcRenderer.invoke('rename-account', { id, label }),
+  // partition binds the capture/validation to a specific account's cookie jar
+  validateSessionKey: (sessionKey, partition) => ipcRenderer.invoke('validate-session-key', sessionKey, partition),
+  detectSessionKey: (partition) => ipcRenderer.invoke('detect-session-key', partition),
 
   // Window controls
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
@@ -40,12 +43,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRefreshUsage: (callback) => {
     ipcRenderer.on('refresh-usage', () => callback());
   },
-  onSessionExpired: (callback) => {
-    ipcRenderer.on('session-expired', () => callback());
+  // Fired when a single account's session is blocked/expired — carries the id
+  // so only that card flips to the reconnect state.
+  onAccountSessionExpired: (callback) => {
+    ipcRenderer.on('account-session-expired', (event, accountId) => callback(accountId));
   },
 
   // API
-  fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
+  fetchUsageData: (accountId) => ipcRenderer.invoke('fetch-usage-data', accountId),
   getUsageHistory: () => ipcRenderer.invoke('get-usage-history'),
   openExternal: (url) => {
     if (isAllowedExternalUrl(url)) {

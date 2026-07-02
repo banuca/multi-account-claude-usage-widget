@@ -56,6 +56,11 @@ let mainWindow = null;
 let sessionTray = null;  // Tray icon for Session usage
 let weeklyTray = null;   // Tray icon for Weekly usage
 
+// Latest usage payload per account id, keyed by account id. Drives the tray
+// rollup (worst account) and the per-account tooltip/menu. In-memory only —
+// rebuilt as each account is polled.
+const latestUsageByAccount = {};
+
 const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
 const HISTORY_RETENTION_DAYS = 8;
@@ -138,9 +143,90 @@ app.on('ready', () => {
   session.defaultSession.setUserAgent(CHROME_USER_AGENT);
 });
 
-// Set sessionKey as a cookie in Electron's session
-async function setSessionCookie(sessionKey) {
-  await session.defaultSession.cookies.set({
+// ---------------------------------------------------------------------------
+// Multi-account model
+//
+// Each account owns an isolated Electron session partition
+// (`persist:acct-<id>`), so its sessionKey cookie lives in its own jar and
+// multiple logins coexist. The store holds a list of accounts; the sessionKey
+// itself lives in the partition's cookie jar plus an encrypted safeStorage
+// backup keyed by account id (re-applied to the partition on startup).
+// ---------------------------------------------------------------------------
+
+function partitionFor(id) {
+  return `persist:acct-${id}`;
+}
+
+// Resolve an account's partition session and ensure it carries the spoofed
+// Chrome UA (Claude/Cloudflare blocks Electron's default UA).
+function getAccountSession(id) {
+  const s = session.fromPartition(partitionFor(id));
+  s.setUserAgent(CHROME_USER_AGENT);
+  return s;
+}
+
+function getAccounts() {
+  return store.get('accounts', []);
+}
+
+function setAccounts(accounts) {
+  store.set('accounts', accounts);
+}
+
+function getAccount(id) {
+  return getAccounts().find((a) => a.id === id);
+}
+
+// Monotonic account id so partitions stay stable and readable (acct-1, acct-2…).
+function nextAccountId() {
+  const n = store.get('accountSeq', 0) + 1;
+  store.set('accountSeq', n);
+  return String(n);
+}
+
+// Default labels: first account "Personal", second "Work", then "Account N".
+function defaultLabel(index) {
+  if (index === 0) return 'Personal';
+  if (index === 1) return 'Work';
+  return `Account ${index + 1}`;
+}
+
+// Per-account sessionKey backup — encrypted via OS keychain when available,
+// mirroring the original single-account storage.
+function saveAccountKey(id, sessionKey) {
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = safeStorage.encryptString(sessionKey);
+    store.set(`account_${id}_sessionKey_encrypted`, encrypted.toString('base64'));
+    store.delete(`account_${id}_sessionKey`);
+  } else {
+    store.set(`account_${id}_sessionKey`, sessionKey);
+  }
+}
+
+function loadAccountKey(id) {
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = store.get(`account_${id}_sessionKey_encrypted`);
+    if (encrypted) {
+      try {
+        return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+      } catch (err) {
+        console.error(`[Keychain] Failed to decrypt session key for account ${id}:`, err.message);
+      }
+    }
+    return null;
+  }
+  return store.get(`account_${id}_sessionKey`, null);
+}
+
+function deleteAccountKey(id) {
+  store.delete(`account_${id}_sessionKey_encrypted`);
+  store.delete(`account_${id}_sessionKey`);
+}
+
+// Set the sessionKey cookie on an account's partition session.
+async function setSessionCookie(sessionKey, id) {
+  const sess = getAccountSession(id);
+  await sess.cookies.set({
     url: 'https://claude.ai',
     name: 'sessionKey',
     value: sessionKey,
@@ -149,7 +235,42 @@ async function setSessionCookie(sessionKey) {
     secure: true,
     httpOnly: true
   });
-  debugLog('sessionKey cookie set in Electron session');
+  debugLog(`sessionKey cookie set on partition for account ${id}`);
+}
+
+// One-time migration: fold a pre-existing single-account config into accounts[0].
+// Runs before the first render so the widget shows the account straight away.
+function migrateLegacyAccount() {
+  if (store.get('accounts') !== undefined) return; // already on the multi-account model
+
+  let legacyKey = null;
+  if (safeStorage.isEncryptionAvailable()) {
+    const enc = store.get('sessionKey_encrypted');
+    if (enc) {
+      try {
+        legacyKey = safeStorage.decryptString(Buffer.from(enc, 'base64'));
+      } catch (err) {
+        console.error('[Migration] Failed to decrypt legacy session key:', err.message);
+      }
+    }
+  }
+  if (!legacyKey) legacyKey = store.get('sessionKey', null);
+  const legacyOrg = store.get('organizationId', null);
+
+  if (legacyKey && legacyOrg) {
+    const id = nextAccountId();
+    saveAccountKey(id, legacyKey);
+    setAccounts([{ id, label: 'Personal', orgId: legacyOrg, organizations: [] }]);
+    debugLog('[Migration] Migrated legacy single account into accounts[0], id', id);
+  } else {
+    // Nothing to migrate — initialise an empty list so this never runs again.
+    setAccounts([]);
+  }
+
+  // Clear legacy single-account keys regardless (their data now lives per-account).
+  store.delete('sessionKey');
+  store.delete('sessionKey_encrypted');
+  store.delete('organizationId');
 }
 
 function createMainWindow() {
@@ -547,6 +668,44 @@ function showMainWindowClean() {
   mainWindow.focus();
 }
 
+// Build the tray context menu: one (disabled) detail line per account with its
+// session/weekly numbers — the "full detail" popup — plus the shared controls.
+function buildTrayMenu() {
+  const template = [];
+  const accounts = getAccounts();
+  for (const a of accounts) {
+    const d = latestUsageByAccount[a.id];
+    const label = d
+      ? `${a.label}:  Session ${Math.round(d.five_hour?.utilization || 0)}%  ·  Weekly ${Math.round(d.seven_day?.utilization || 0)}%`
+      : `${a.label}:  —`;
+    template.push({ label, enabled: false });
+  }
+  if (accounts.length) template.push({ type: 'separator' });
+
+  template.push({
+    label: 'Show Widget',
+    click: () => {
+      if (mainWindow) {
+        showMainWindowClean();
+      } else {
+        createMainWindow();
+      }
+    }
+  });
+  template.push({
+    label: 'Refresh',
+    click: () => {
+      if (mainWindow) {
+        mainWindow.webContents.send('refresh-usage');
+      }
+    }
+  });
+  template.push({ type: 'separator' });
+  template.push({ label: 'Exit', click: () => app.quit() });
+
+  return Menu.buildFromTemplate(template);
+}
+
 function createTray() {
   // Respect the tray stats setting even when createTray is called from generic refresh paths.
   if (!store.get('settings.showTrayStats', false)) {
@@ -571,54 +730,7 @@ function createTray() {
     sessionTray = new Tray(staticIconPath);
     sessionTray.setToolTip('Session Usage');
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Show Widget',
-        click: () => {
-          if (mainWindow) {
-            showMainWindowClean();
-          } else {
-            createMainWindow();
-          }
-        }
-      },
-      {
-        label: 'Refresh',
-        click: () => {
-          if (mainWindow) {
-            mainWindow.webContents.send('refresh-usage');
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Log Out',
-        click: async () => {
-          store.delete('sessionKey');
-          store.delete('organizationId');
-          // Clear all Claude.ai cookies and session storage
-          const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
-          for (const cookie of cookies) {
-            await session.defaultSession.cookies.remove('https://claude.ai', cookie.name);
-          }
-          await session.defaultSession.clearStorageData({
-            storages: ['localstorage', 'sessionstorage', 'cachestorage'],
-            origin: 'https://claude.ai'
-          });
-          if (mainWindow) {
-            mainWindow.webContents.send('session-expired');
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Exit',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
-
+    const contextMenu = buildTrayMenu();
     sessionTray.setContextMenu(contextMenu);
     weeklyTray.setContextMenu(contextMenu);
 
@@ -715,9 +827,40 @@ function formatResetTime(resetsAt, timeFormat, includeDate = false) {
  * Update tray icons with current usage data
  * @param {Object} usageData - Usage data object containing session and weekly percentages
  */
-function updateTrayIcon(usageData) {
+// Pick the account closest to a limit — the highest max(session, weekly) across
+// all polled accounts. Returns null when no account has usage data yet.
+function computeWorstAccount() {
+  let worst = null;
+  let worstVal = -1;
+  for (const a of getAccounts()) {
+    const d = latestUsageByAccount[a.id];
+    if (!d) continue;
+    const sessionPct = d.five_hour?.utilization || 0;
+    const weeklyPct = d.seven_day?.utilization || 0;
+    const m = Math.max(sessionPct, weeklyPct);
+    if (m > worstVal) {
+      worstVal = m;
+      worst = { account: a, data: d, sessionPct, weeklyPct };
+    }
+  }
+  return worst;
+}
+
+// One short tooltip line per account, e.g. "Personal: S 45% / W 60%".
+function trayTooltipLines() {
+  return getAccounts().map((a) => {
+    const d = latestUsageByAccount[a.id];
+    if (!d) return `${a.label}: —`;
+    return `${a.label}: S ${Math.round(d.five_hour?.utilization || 0)}% / W ${Math.round(d.seven_day?.utilization || 0)}%`;
+  });
+}
+
+// Roll every account up into the two tray badges: the worst account drives the
+// numbers, while the tooltip and context menu carry per-account detail. Replaces
+// the single-account updateTrayIcon().
+function updateTrayRollup() {
   const showTrayStats = store.get('settings.showTrayStats', false);
-  
+
   if (!showTrayStats) {
     // Destroy only weeklyTray, keeping sessionTray alive as a persistent restore
     // icon. Without it, hide() on Windows leaves no way to restore the window.
@@ -739,22 +882,20 @@ function updateTrayIcon(usageData) {
   if (!sessionTray || sessionTray.isDestroyed() || !weeklyTray || weeklyTray.isDestroyed()) {
     createTray();
   }
-
   if ((!sessionTray || sessionTray.isDestroyed()) && (!weeklyTray || weeklyTray.isDestroyed())) return;
 
-  // Get threshold settings and time format
   const warnThreshold = store.get('settings.warnThreshold', 75);
   const dangerThreshold = store.get('settings.dangerThreshold', 90);
-  const timeFormat = store.get('settings.timeFormat', '12h');
 
-  // Extract percentages and reset times from usage data
-  const sessionPercent = usageData?.five_hour?.utilization || 0;
-  const sessionResetsAt = usageData?.five_hour?.resets_at;
-  const weeklyPercent = usageData?.seven_day?.utilization || 0;
-  const weeklyResetsAt = usageData?.seven_day?.resets_at;
+  const worst = computeWorstAccount();
+  const sessionPercent = worst ? worst.sessionPct : 0;
+  const weeklyPercent = worst ? worst.weeklyPct : 0;
+
+  const header = worst ? `Closest to limit: ${worst.account.label}` : 'Claude Usage';
+  const tooltip = [header, ...trayTooltipLines()].join('\n');
 
   try {
-    // Generate Weekly icon (blue background) - LEFT position
+    // Weekly icon (blue background) — LEFT position
     let weeklyIcon;
     if (weeklyPercent >= 99) {
       weeklyIcon = generateRedXIcon();
@@ -764,15 +905,10 @@ function updateTrayIcon(usageData) {
     }
     if (weeklyTray && !weeklyTray.isDestroyed()) {
       weeklyTray.setImage(weeklyIcon);
-      let weeklyTooltip = `Weekly: ${Math.round(weeklyPercent)}%`;
-      const weeklyResetTime = formatResetTime(weeklyResetsAt, timeFormat, true);
-      if (weeklyResetTime) {
-        weeklyTooltip += `\nResets: ${weeklyResetTime}`;
-      }
-      weeklyTray.setToolTip(weeklyTooltip);
+      weeklyTray.setToolTip(tooltip);
     }
-    
-    // Generate Session icon (purple background) - RIGHT position
+
+    // Session icon (purple background) — RIGHT position
     let sessionIcon;
     if (sessionPercent >= 99) {
       sessionIcon = generateRedXIcon();
@@ -782,108 +918,137 @@ function updateTrayIcon(usageData) {
     }
     if (sessionTray && !sessionTray.isDestroyed()) {
       sessionTray.setImage(sessionIcon);
-      let sessionTooltip = `Session: ${Math.round(sessionPercent)}%`;
-      const sessionResetTime = formatResetTime(sessionResetsAt, timeFormat, false);
-      if (sessionResetTime) {
-        sessionTooltip += `\nResets: ${sessionResetTime}`;
-      }
-      sessionTray.setToolTip(sessionTooltip);
+      sessionTray.setToolTip(tooltip);
     }
+
+    // Refresh the context menu so its per-account detail lines stay current.
+    const menu = buildTrayMenu();
+    if (sessionTray && !sessionTray.isDestroyed()) sessionTray.setContextMenu(menu);
+    if (weeklyTray && !weeklyTray.isDestroyed()) weeklyTray.setContextMenu(menu);
   } catch (error) {
     console.error('Failed to update tray icons:', error);
   }
 }
 
 
-// IPC Handlers
-ipcMain.handle('get-credentials', () => {
-  let sessionKey = null;
-  // Try safeStorage first (OS keychain)
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    // Fallback: plain storage (legacy or safeStorage unavailable)
-    sessionKey = store.get('sessionKey');
-  }
-  return {
-    sessionKey,
-    organizationId: store.get('organizationId')
-  };
+// IPC Handlers — account management
+
+// List accounts for the renderer (never returns the sessionKey itself).
+ipcMain.handle('get-accounts', () => {
+  return getAccounts().map((a) => ({
+    id: a.id,
+    label: a.label,
+    orgId: a.orgId,
+    organizations: a.organizations || [],
+    hasSession: !!loadAccountKey(a.id)
+  }));
 });
 
-ipcMain.handle('save-credentials', async (event, { sessionKey, organizationId }) => {
-  // Store session key in OS keychain if available
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(sessionKey);
-    store.set('sessionKey_encrypted', encrypted.toString('base64'));
-    store.delete('sessionKey'); // Remove legacy plain storage
+// Allocate an id + partition for a not-yet-saved account. The login/manual
+// capture binds to this partition; nothing is persisted until save-account.
+ipcMain.handle('create-draft-account', () => {
+  const id = nextAccountId();
+  return { id, partition: partitionFor(id), label: defaultLabel(getAccounts().length) };
+});
+
+// Persist (or update) an account, storing its sessionKey in the partition cookie
+// jar plus an encrypted backup.
+ipcMain.handle('save-account', async (event, { id, label, sessionKey, organizationId, organizations }) => {
+  await setSessionCookie(sessionKey, id);
+  saveAccountKey(id, sessionKey);
+
+  const accounts = getAccounts();
+  const existing = accounts.find((a) => a.id === id);
+  if (existing) {
+    if (label !== undefined) existing.label = label;
+    if (organizationId !== undefined) existing.orgId = organizationId;
+    if (organizations !== undefined) existing.organizations = organizations;
   } else {
-    // Fallback: plain storage
-    store.set('sessionKey', sessionKey);
+    accounts.push({
+      id,
+      label: label || defaultLabel(accounts.length),
+      orgId: organizationId,
+      organizations: organizations || []
+    });
   }
-  if (organizationId) {
-    store.set('organizationId', organizationId);
-  }
-  // Also set cookie in Electron session for window-based fetching
-  await setSessionCookie(sessionKey);
+  setAccounts(accounts);
+  updateTrayRollup();
   return true;
 });
 
-ipcMain.handle('delete-credentials', async () => {
-  store.delete('sessionKey');
-  store.delete('sessionKey_encrypted');
-  store.delete('organizationId');
-  // Remove all Claude.ai cookies
-  const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
-  for (const cookie of cookies) {
-    await session.defaultSession.cookies.remove('https://claude.ai', cookie.name);
-  }
-  // Clear any cached data from the Electron session (storage, cache)
-  // so nothing lingers on shared machines
-  await session.defaultSession.clearStorageData({
-    storages: ['localstorage', 'sessionstorage', 'cachestorage'],
-    origin: 'https://claude.ai'
-  });
-  return true;
-});
-
-// Validate a sessionKey by fetching org ID via hidden BrowserWindow
-ipcMain.handle('validate-session-key', async (event, sessionKey) => {
-  debugLog('Validating session key:', sessionKey.substring(0, 20) + '...');
+// Remove an account: drop its entry + key and wipe its partition so nothing
+// lingers on shared machines. Other accounts are untouched.
+ipcMain.handle('remove-account', async (event, id) => {
+  setAccounts(getAccounts().filter((a) => a.id !== id));
+  deleteAccountKey(id);
+  delete latestUsageByAccount[id];
   try {
-    // Set the cookie in Electron's session first
-    await setSessionCookie(sessionKey);
+    const sess = session.fromPartition(partitionFor(id));
+    const cookies = await sess.cookies.get({ url: 'https://claude.ai' });
+    for (const cookie of cookies) {
+      await sess.cookies.remove('https://claude.ai', cookie.name);
+    }
+    await sess.clearStorageData({
+      storages: ['localstorage', 'sessionstorage', 'cachestorage'],
+      origin: 'https://claude.ai'
+    });
+  } catch (err) {
+    console.error(`[Account] Failed to clear partition for ${id}:`, err.message);
+  }
+  updateTrayRollup();
+  return true;
+});
 
-    // Fetch organizations using hidden BrowserWindow (bypasses Cloudflare)
-    const data = await fetchViaWindow('https://claude.ai/api/organizations');
+ipcMain.handle('rename-account', (event, { id, label }) => {
+  const accounts = getAccounts();
+  const account = accounts.find((a) => a.id === id);
+  if (account) {
+    account.label = label;
+    setAccounts(accounts);
+    updateTrayRollup();
+  }
+  return true;
+});
+
+// Validate a sessionKey by fetching the org list via a hidden BrowserWindow bound
+// to the account's partition (bypasses Cloudflare). Returns the resolvable orgs.
+ipcMain.handle('validate-session-key', async (event, sessionKey, partition) => {
+  debugLog('Validating session key on partition', partition);
+  const sess = partition ? session.fromPartition(partition) : session.defaultSession;
+  if (partition) sess.setUserAgent(CHROME_USER_AGENT);
+  try {
+    // Set the cookie on the account's partition first
+    await sess.cookies.set({
+      url: 'https://claude.ai',
+      name: 'sessionKey',
+      value: sessionKey,
+      domain: '.claude.ai',
+      path: '/',
+      secure: true,
+      httpOnly: true
+    });
+
+    // Fetch organizations through that partition (bypasses Cloudflare)
+    const data = await fetchViaWindow('https://claude.ai/api/organizations', { partition });
 
     if (data && Array.isArray(data) && data.length > 0) {
       // Filter to orgs with 'chat' capability (excludes API-only orgs)
-      const chatOrgs = data.filter(org => 
-        org.capabilities && org.capabilities.includes('chat')
-      );
+      const chatOrgs = data.filter((org) => org.capabilities && org.capabilities.includes('chat'));
 
       if (chatOrgs.length === 0) {
         return { success: false, error: 'No chat-enabled organizations found' };
       }
 
-      // Prioritize Teams org if present, otherwise use first chat org
-      const defaultOrg = chatOrgs.find(org => org.raven_type === 'team') || chatOrgs[0];
+      // Prioritise a Team org if present, otherwise the first chat org
+      const defaultOrg = chatOrgs.find((org) => org.raven_type === 'team') || chatOrgs[0];
       const orgId = defaultOrg.uuid || defaultOrg.id;
-      
+
       debugLog(`Session key validated, found ${chatOrgs.length} chat org(s), default org ID:`, orgId);
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         organizationId: orgId,
-        organizations: chatOrgs.map(org => ({
+        organizations: chatOrgs.map((org) => ({
           id: org.uuid || org.id,
           name: org.name,
           isTeam: org.raven_type === 'team'
@@ -891,7 +1056,6 @@ ipcMain.handle('validate-session-key', async (event, sessionKey) => {
       };
     }
 
-    // Check if it's an error response
     if (data && data.error) {
       return { success: false, error: data.error.message || data.error };
     }
@@ -899,8 +1063,10 @@ ipcMain.handle('validate-session-key', async (event, sessionKey) => {
     return { success: false, error: 'No organization found' };
   } catch (error) {
     console.error('Session key validation failed:', error.message);
-    // Clean up the invalid cookie
-    await session.defaultSession.cookies.remove('https://claude.ai', 'sessionKey');
+    // Clean up the invalid cookie on that partition
+    try {
+      await sess.cookies.remove('https://claude.ai', 'sessionKey');
+    } catch (_) {}
     return { success: false, error: error.message };
   }
 });
@@ -1066,14 +1232,9 @@ ipcMain.handle('save-settings', (event, settings) => {
     // Remove tray icons immediately when the setting is turned off from the UI.
     destroyTrayIcons();
   } else {
-    // Refresh tray icons immediately with new threshold settings
-    const latestUsageData = store.get('latestUsageData');
-    if (latestUsageData) {
-      updateTrayIcon(latestUsageData);
-    } else {
-      // Create empty tray icons now; the next usage refresh will draw the stats.
-      createTray();
-    }
+    // Refresh the tray rollup immediately with new threshold settings. When no
+    // account has been polled yet this just (re)creates the empty tray icons.
+    updateTrayRollup();
   }
 
   return true;
@@ -1091,10 +1252,13 @@ ipcMain.handle('save-settings', (event, settings) => {
 // SECURITY: Navigation is restricted to trusted domains (claude.ai and OAuth
 // providers) to prevent phishing attacks. Popup windows are blocked. Current
 // URL is displayed in the window title bar for transparency.
-ipcMain.handle('detect-session-key', async () => {
-  // Clear any leftover sessionKey cookie
+ipcMain.handle('detect-session-key', async (event, partition) => {
+  const sess = partition ? session.fromPartition(partition) : session.defaultSession;
+  if (partition) sess.setUserAgent(CHROME_USER_AGENT);
+
+  // Clear any leftover sessionKey cookie on this account's partition
   try {
-    await session.defaultSession.cookies.remove('https://claude.ai', 'sessionKey');
+    await sess.cookies.remove('https://claude.ai', 'sessionKey');
   } catch (e) { /* ignore */ }
 
   return new Promise((resolve) => {
@@ -1104,7 +1268,8 @@ ipcMain.handle('detect-session-key', async () => {
       title: 'Claude Login - https://claude.ai/login',
       webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        ...(partition ? { partition } : {})
       }
     });
 
@@ -1161,16 +1326,16 @@ ipcMain.handle('detect-session-key', async () => {
         cookie.value
       ) {
         resolved = true;
-        session.defaultSession.cookies.removeListener('changed', onCookieChanged);
+        sess.cookies.removeListener('changed', onCookieChanged);
         loginWin.close();
         resolve({ success: true, sessionKey: cookie.value });
       }
     };
 
-    session.defaultSession.cookies.on('changed', onCookieChanged);
+    sess.cookies.on('changed', onCookieChanged);
 
     loginWin.on('closed', () => {
-      session.defaultSession.cookies.removeListener('changed', onCookieChanged);
+      sess.cookies.removeListener('changed', onCookieChanged);
       if (!resolved) {
         resolve({ success: false, error: 'Login window closed' });
       }
@@ -1249,148 +1414,51 @@ function isNewerVersion(remote, local) {
   } catch { return false; }
 }
 
-ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
-  // Use the same credential retrieval logic as get-credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+ipcMain.handle('fetch-usage-data', async (event, accountId) => {
+  const account = getAccount(accountId);
+  if (!account) throw new Error('UnknownAccount');
 
-  const organizationId = store.get('organizationId');
-
+  const sessionKey = loadAccountKey(accountId);
+  const organizationId = account.orgId;
   if (!sessionKey || !organizationId) {
     throw new Error('Missing credentials');
   }
 
-  // Ensure cookie is set
-  await setSessionCookie(sessionKey);
+  // Ensure the cookie is present on this account's partition
+  await setSessionCookie(sessionKey, accountId);
 
-  // Conditional API polling: Only fetch overage/prepaid if the expand panel is open
-  // or if compact mode is disabled (normal mode). This reduces API calls when the
-  // user won't see the extra usage data anyway.
-  // If forceExtended is passed (e.g., when user clicks expand), use that instead of saved setting
-  const expandedOpen = options.forceExtended !== undefined ? options.forceExtended : store.get('settings.expandedOpen', false);
-  const compactMode = store.get('settings.compactMode', false);
-  const shouldFetchExtended = expandedOpen;
+  const partition = partitionFor(accountId);
 
+  // v1 fetches only the usage endpoint (overage/prepaid extra-usage is out of
+  // scope for multi-account). fetchMultipleViaWindow reuses one hidden window
+  // bound to the account's partition.
   const usageUrl = `https://claude.ai/api/organizations/${organizationId}/usage`;
-  const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
-  const prepaidUrl = `https://claude.ai/api/organizations/${organizationId}/prepaid/credits`;
 
-  // Build URL array based on UI state
-  const urls = [usageUrl];
-  if (shouldFetchExtended) {
-    urls.push(overageUrl, prepaidUrl);
-    debugLog('[Conditional Polling] Fetching extended data (overage + prepaid) - panel is visible');
-  } else {
-    debugLog('[Conditional Polling] Skipping extended data - panel not visible');
-  }
-
-  // Fetch endpoints sequentially using a single reused BrowserWindow.
-  // This reduces memory overhead compared to creating 3 separate windows.
-  // Usage is always required; overage and prepaid are conditional based on UI state.
-  let usageResult, overageResult, prepaidResult;
-  
+  let data;
   try {
-    const results = await fetchMultipleViaWindow(urls);
-    
-    // Always have usage result (first in array)
-    usageResult = { status: 'fulfilled', value: results[0] };
-    
-    // Conditionally map overage/prepaid results
-    if (shouldFetchExtended) {
-      overageResult = { status: 'fulfilled', value: results[1] };
-      prepaidResult = { status: 'fulfilled', value: results[2] };
-    } else {
-      // Mark as skipped (not an error, just not fetched)
-      overageResult = { status: 'skipped', reason: 'UI panel not visible' };
-      prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
-    }
+    const results = await fetchMultipleViaWindow([usageUrl], { partition });
+    data = results[0];
   } catch (error) {
-    // If any fetch fails, determine which one and set appropriate result statuses
-    // For now, if the batch fails, treat usage as failed (required endpoint)
-    usageResult = { status: 'rejected', reason: error };
-    overageResult = { status: 'rejected', reason: error };
-    prepaidResult = { status: 'rejected', reason: error };
-  }
-
-  // Usage endpoint is mandatory
-  if (usageResult.status === 'rejected') {
-    const error = usageResult.reason;
-    debugLog('API request failed:', error.message);
+    debugLog(`API request failed for account ${accountId}:`, error.message);
     const isBlocked = error.message.startsWith('CloudflareBlocked')
       || error.message.startsWith('CloudflareChallenge')
       || error.message.startsWith('UnexpectedHTML');
     if (isBlocked) {
-      store.delete('sessionKey');
-      store.delete('organizationId');
+      // This account's session is dead — drop its key and flag only this card
+      // for re-login. Other accounts keep polling.
+      deleteAccountKey(accountId);
+      delete latestUsageByAccount[accountId];
       if (mainWindow) {
-        mainWindow.webContents.send('session-expired');
+        mainWindow.webContents.send('account-session-expired', accountId);
       }
+      updateTrayRollup();
       throw new Error('SessionExpired');
     }
     throw error;
   }
 
-  const data = usageResult.value;
-
-  // Merge overage spending data into data.extra_usage
-  if (overageResult.status === 'fulfilled' && overageResult.value) {
-    const overage = overageResult.value;
-    const limit = overage.monthly_credit_limit ?? overage.spend_limit_amount_cents;
-    const used = overage.used_credits ?? overage.balance_cents;
-    const enabled = overage.is_enabled !== undefined ? overage.is_enabled : (limit != null);
-
-    if (enabled && typeof limit === 'number' && limit > 0 && typeof used === 'number') {
-      data.extra_usage = {
-        utilization: (used / limit) * 100,
-        resets_at: null,
-        used_cents: used,
-        limit_cents: limit,
-        is_enabled: true,
-        currency: overage.currency || 'USD',
-      };
-    } else if (!enabled) {
-      // Extra usage is off — still pass the flag so the renderer can show status
-      if (!data.extra_usage) data.extra_usage = {};
-      data.extra_usage.is_enabled = false;
-      data.extra_usage.currency = overage.currency || 'USD';
-    }
-  } else {
-    debugLog('Overage fetch skipped or failed:', overageResult.reason?.message || 'no data');
-  }
-
-  // Merge prepaid balance into data.extra_usage
-  if (prepaidResult.status === 'fulfilled' && prepaidResult.value) {
-    const prepaid = prepaidResult.value;
-    if (typeof prepaid.amount === 'number') {
-      if (!data.extra_usage) data.extra_usage = {};
-      data.extra_usage.balance_cents = prepaid.amount;
-      // Use prepaid currency if overage didn't already set one
-      if (!data.extra_usage.currency && prepaid.currency) {
-        data.extra_usage.currency = prepaid.currency;
-      }
-    }
-  } else {
-    debugLog('Prepaid fetch skipped or failed:', prepaidResult.reason?.message || 'no data');
-  }
-
-  storeUsageHistory(data);
-
-  // Store latest usage data for settings refresh
-  store.set('latestUsageData', data);
-
-  // Update tray icon with current usage data
-  updateTrayIcon(data);
+  latestUsageByAccount[accountId] = data;
+  updateTrayRollup();
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
   // are destroyed — creating/destroying BrowserWindows can temporarily disrupt
@@ -1407,27 +1475,19 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  // Restore session cookie if we have stored credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key on startup:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
-
-  if (sessionKey) {
-    await setSessionCookie(sessionKey);
-  }
-
+  // History housekeeping runs first (still keyed off any legacy organizationId).
   migrateUsageHistoryKey();
   pruneStaleHistoryKeys();
+
+  // Fold any legacy single-account config into accounts[0], then restore each
+  // account's sessionKey cookie onto its own partition.
+  migrateLegacyAccount();
+  for (const account of getAccounts()) {
+    const key = loadAccountKey(account.id);
+    if (key) {
+      await setSessionCookie(key, account.id);
+    }
+  }
 
   createMainWindow();
   // Avoid creating temporary tray icons during startup when tray stats are disabled.
