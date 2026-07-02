@@ -51,16 +51,21 @@ function parseResponseBody(bodyText) {
  * @param {string} url - URL to fetch
  * @param {Object} options - Options object
  * @param {number} options.timeoutMs - Request timeout in milliseconds (default: 30000)
+ * @param {string} [options.partition] - Session partition to ride (e.g. 'persist:acct-1').
+ *   When set, the window uses that account's isolated cookie jar so each account's
+ *   sessionKey stays separate. Omit to use the default session.
  * @returns {Promise<Object>} Parsed JSON response
  */
-function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
+function fetchViaWindow(url, { timeoutMs = 30000, partition } = {}) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
       width: 800,
       height: 600,
-      show: false,      webPreferences: {
+      show: false,
+      webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        ...(partition ? { partition } : {})
       }
     });
 
@@ -103,9 +108,11 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
  * @param {string[]} urls - Array of URLs to fetch
  * @param {Object} options - Options object
  * @param {number} options.timeoutMs - Per-request timeout in milliseconds (default: 10000)
+ * @param {string} [options.partition] - Session partition to ride (e.g. 'persist:acct-1').
+ *   Routes every request in the batch through that account's isolated cookie jar.
  * @returns {Promise<Object[]>} Array of parsed JSON responses (or errors)
  */
-function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
+function fetchMultipleViaWindow(urls, { timeoutMs = 10000, partition } = {}) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
       width: 800,
@@ -113,7 +120,8 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
       show: false,
       webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        ...(partition ? { partition } : {})
       }
     });
 
