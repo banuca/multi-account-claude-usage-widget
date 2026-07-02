@@ -1557,3 +1557,212 @@ body.theme-light .compact-pct {
 .progress-fill.pulse {
     animation: pulse-danger 1.2s ease-in-out infinite;
 }
+
+/* ── Multi-account cards ──────────────────────────────────────────────── */
+#accountsContainer {
+    display: flex;
+    flex-direction: column;
+}
+
+.account-card {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.account-card + .account-card {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 6px;
+    padding-top: 8px;
+}
+
+body.theme-light .account-card + .account-card {
+    border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+.account-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 16px 2px 12px;
+}
+
+.account-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #c7c7d4;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.theme-light .account-label {
+    color: #33334a;
+}
+
+.account-card.worst .account-label::after {
+    content: '\25CF closest to limit';
+    margin-left: 8px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #f59e0b;
+    letter-spacing: 0.3px;
+}
+
+.account-card.expired .usage-section {
+    opacity: 0.45;
+}
+
+.account-reconnect-btn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.account-reconnect-btn:hover {
+    background: rgba(239, 68, 68, 0.25);
+}
+
+/* ── Add-account / login topbar ───────────────────────────────────────── */
+.login-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px 8px;
+}
+
+.login-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #c7c7d4;
+}
+
+body.theme-light .login-title {
+    color: #33334a;
+}
+
+.login-cancel-btn {
+    background: transparent;
+    border: none;
+    color: #808080;
+    font-size: 14px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+}
+
+.login-cancel-btn:hover {
+    color: #e0e0e0;
+}
+
+body.theme-light .login-cancel-btn:hover {
+    color: #1a1a1a;
+}
+
+/* ── Org picker (add-account step 3) ──────────────────────────────────── */
+.org-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px 4px;
+}
+
+.org-picker h3 {
+    font-size: 14px;
+    color: #e0e0e0;
+    margin: 0;
+}
+
+body.theme-light .org-picker h3 {
+    color: #1a1a1a;
+}
+
+/* ── Accounts management (settings) ───────────────────────────────────── */
+.settings-accounts {
+    padding: 2px 2px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.theme-light .settings-accounts {
+    border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.settings-accounts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.add-account-btn {
+    background: rgba(139, 92, 246, 0.18);
+    color: #8b5cf6;
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.add-account-btn:hover {
+    background: rgba(139, 92, 246, 0.3);
+}
+
+.accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.account-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.account-label-input {
+    flex: 1;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 12px;
+    padding: 5px 8px;
+}
+
+body.theme-light .account-label-input {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.15);
+    color: #1a1a1a;
+}
+
+.account-label-input:focus {
+    border-color: rgba(139, 92, 246, 0.6);
+}
+
+.account-remove-btn {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.account-remove-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+}

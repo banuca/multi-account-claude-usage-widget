@@ -939,6 +939,7 @@ ipcMain.handle('get-accounts', () => {
     id: a.id,
     label: a.label,
     orgId: a.orgId,
+    partition: partitionFor(a.id),
     organizations: a.organizations || [],
     hasSession: !!loadAccountKey(a.id)
   }));

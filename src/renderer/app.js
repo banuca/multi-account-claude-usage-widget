@@ -1,5 +1,5 @@
 // Application state
-let credentials = null;
+let credentials = null;       // legacy single-account state (retained; unused in v1 multi-account)
 let updateInterval = null;
 let countdownInterval = null;
 let latestUsageData = null;
@@ -12,6 +12,20 @@ let graphWasVisible = false; // preserves graph state across compact mode toggle
 let appInitializing = true;  // suppresses _saveViewState during startup restore
 let isFetching = false;       // in-flight guard — prevents overlapping fetchUsageData calls
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+// ── Multi-account state ──────────────────────────────────────────────────────
+let accounts = [];                    // [{ id, label, orgId, organizations, hasSession }]
+const cardsById = new Map();          // accountId -> { card, els } scoped card elements
+const usageByAccount = {};            // accountId -> latest usage data (renderer copy)
+const fetchingAccounts = new Set();   // per-account in-flight guard
+const expiredAccounts = new Set();    // accountIds whose session has expired (need reconnect)
+let draftAccount = null;              // { id, partition, label } while adding an account
+let addingFromSettings = false;       // true when the add-flow was launched with accounts present
+let pendingValidation = null;         // { sessionKey, organizations } awaiting an org pick
+
+// Fork release page (in-app update check + banner link)
+const RELEASES_URL = 'https://github.com/banuca/multi-account-claude-usage-widget/releases/latest';
+const SETTINGS_HEIGHT = 460;          // window height while the settings panel is open
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
 const GRAPH_HEIGHT = 232;
@@ -43,19 +57,6 @@ const elements = {
     graphBtn: document.getElementById('graphBtn'),
     minimizeBtn: document.getElementById('minimizeBtn'),
     closeBtn: document.getElementById('closeBtn'),
-
-    sessionPercentage: document.getElementById('sessionPercentage'),
-    sessionProgress: document.getElementById('sessionProgress'),
-    sessionTimer: document.getElementById('sessionTimer'),
-    sessionTimeText: document.getElementById('sessionTimeText'),
-
-    weeklyPercentage: document.getElementById('weeklyPercentage'),
-    weeklyProgress: document.getElementById('weeklyProgress'),
-    weeklyTimer: document.getElementById('weeklyTimer'),
-    weeklyTimeText: document.getElementById('weeklyTimeText'),
-    weeklyResetsAt: document.getElementById('weeklyResetsAt'),
-
-    sessionResetsAt: document.getElementById('sessionResetsAt'),
 
     expandToggle: document.getElementById('expandToggle'),
     expandArrow: document.getElementById('expandArrow'),
@@ -103,52 +104,21 @@ const elements = {
     closeCompactSettingsBtn: document.getElementById('closeCompactSettingsBtn')
 };
 
-// Populate organization selector dropdown
-function populateOrgSelector(organizations, selectedOrgId) {
-    if (!organizations || organizations.length === 0) {
-        // No orgs - hide selector column
-        elements.orgSelectorCol.style.display = 'none';
-        return;
-    }
-
-    // Only show selector if user has multiple chat orgs
-    if (organizations.length > 1) {
-        elements.orgSelectorCol.style.display = '';  // Show column (use default flex display)
-        
-        // Clear existing options
-        elements.orgSelector.innerHTML = '';
-        
-        // Add each org as an option
-        organizations.forEach(org => {
-            const option = document.createElement('option');
-            option.value = org.id;
-            option.textContent = `${org.name}${org.isTeam ? ' (Team)' : ' (Personal)'}`;
-            if (org.id === selectedOrgId) {
-                option.selected = true;
-            }
-            elements.orgSelector.appendChild(option);
-        });
-    } else {
-        // Single org - hide selector column
-        elements.orgSelectorCol.style.display = 'none';
-    }
-}
-
-// Handle organization change
-async function handleOrgChange() {
-    const newOrgId = elements.orgSelector.value;
-    if (newOrgId && newOrgId !== credentials.organizationId) {
-        credentials.organizationId = newOrgId;
-        await window.electronAPI.saveCredentials(credentials);
-        // Refresh usage data with new org
-        await fetchUsageData();
-    }
-}
+// Multi-account element refs (added after the base object above)
+elements.accountsContainer = document.getElementById('accountsContainer');
+elements.accountCardTemplate = document.getElementById('accountCardTemplate');
+elements.loginTitle = document.getElementById('loginTitle');
+elements.loginCancelBtn = document.getElementById('loginCancelBtn');
+elements.loginStep3 = document.getElementById('loginStep3');
+elements.orgPickerSelect = document.getElementById('orgPickerSelect');
+elements.orgPickerConfirmBtn = document.getElementById('orgPickerConfirmBtn');
+elements.orgPickerError = document.getElementById('orgPickerError');
+elements.addAccountBtn = document.getElementById('addAccountBtn');
+elements.accountsList = document.getElementById('accountsList');
 
 // Initialize
 async function init() {
     setupEventListeners();
-    credentials = await window.electronAPI.getCredentials();
 
     // Apply saved theme and load thresholds immediately
     const settings = await window.electronAPI.getSettings();
@@ -160,44 +130,16 @@ async function init() {
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
 
-    // Restore compact mode from saved settings
-    if (settings.compactMode) {
-        applyCompactMode(true);
-    } else {
-        // Ensure compact overlay is hidden in normal mode
-        if (elements.compactSettingsOverlay) elements.compactSettingsOverlay.style.display = 'none';
-    }
+    accounts = await window.electronAPI.getAccounts();
 
-    // Restore graph visibility
-    if (settings.graphVisible) {
-        if (!settings.compactMode) {
-            // Normal mode — show graph immediately
-            graphVisible = true;
-            elements.graphBtn.classList.add('active');
-            elements.graphSection.style.display = 'block';
-        } else {
-            // Compact mode — store so it restores when exiting compact
-            graphWasVisible = true;
-        }
-    }
-
-    // Restore expanded state
-    if (settings.expandedOpen) {
-        isExpanded = true;
-        elements.expandArrow.classList.add('expanded');
-        elements.expandSection.style.display = 'block';
-    }
-
-    if (credentials.sessionKey && credentials.organizationId) {
-        // Populate org selector if user has multiple orgs
-        if (credentials.organizations && credentials.organizations.length > 0) {
-            populateOrgSelector(credentials.organizations, credentials.organizationId);
-        }
+    if (accounts.length > 0) {
+        renderAccounts();
         showMainContent();
-        await fetchUsageData();
+        await pollAllAccounts();
         startAutoUpdate();
     } else {
-        showLoginRequired();
+        // First run — no accounts yet. Open the add-account flow.
+        startAddAccount({ fromSettings: false });
     }
 
     // Populate version label then check for updates after a short delay
@@ -215,10 +157,10 @@ async function init() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Step 1: Login via BrowserWindow
+    // Add-account flow — step 1: embedded login capture (also handles SSO)
     elements.autoDetectBtn.addEventListener('click', handleAutoDetect);
 
-    // Step navigation
+    // Step navigation (Log in ↔ Manual paste)
     elements.nextStepBtn.addEventListener('click', () => {
         elements.loginStep1.style.display = 'none';
         elements.loginStep2.style.display = 'block';
@@ -231,35 +173,37 @@ function setupEventListeners() {
         elements.sessionKeyError.textContent = '';
     });
 
-    // Open browser link in step 2
+    // Open claude.ai in the real browser (to copy the sessionKey for manual entry)
     elements.openBrowserLink.addEventListener('click', (e) => {
         e.preventDefault();
         window.electronAPI.openExternal('https://claude.ai');
     });
 
-    // Step 2: Manual sessionKey connect
+    // Step 2: manual sessionKey connect
     elements.connectBtn.addEventListener('click', handleConnect);
     elements.sessionKeyInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleConnect();
         elements.sessionKeyError.textContent = '';
     });
 
+    // Step 3: pick an organisation (Team accounts with more than one org)
+    elements.orgPickerConfirmBtn.addEventListener('click', handleOrgPick);
+
+    // Cancel the add-account flow (only offered when accounts already exist)
+    elements.loginCancelBtn.addEventListener('click', cancelAddAccount);
+
+    // "Add account" from the settings panel
+    elements.addAccountBtn.addEventListener('click', () => {
+        elements.settingsOverlay.style.display = 'none';
+        startAddAccount({ fromSettings: true });
+    });
+
+    // Refresh — re-poll every account
     elements.refreshBtn.addEventListener('click', async () => {
         debugLog('Refresh button clicked');
         elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
+        await pollAllAccounts();
         elements.refreshBtn.classList.remove('spinning');
-    });
-
-    elements.graphBtn.addEventListener('click', async () => {
-        graphVisible = !graphVisible;
-        elements.graphBtn.classList.toggle('active', graphVisible);
-        elements.graphSection.style.display = graphVisible ? 'block' : 'none';
-        if (graphVisible) {
-            await loadChart();
-        }
-        if (!isCompactMode) resizeWidget();
-        _saveViewState();
     });
 
     elements.minimizeBtn.addEventListener('click', () => {
@@ -270,55 +214,12 @@ function setupEventListeners() {
         window.electronAPI.closeWindow();
     });
 
-    // Expand/collapse toggle
-    elements.expandToggle.addEventListener('click', async () => {
-        const wasExpanded = isExpanded;
-        isExpanded = !isExpanded;
-        elements.expandArrow.classList.toggle('expanded', isExpanded);
-        elements.expandSection.style.display = isExpanded ? 'block' : 'none';
-        if (graphVisible) {
-            loadChart();
-        }
-        resizeWidget();
-        
-        // CRITICAL: Update expandedOpen setting IMMEDIATELY (no debounce) to prevent race condition
-        // If we wait for the debounced save, auto-refresh might fetch with stale expandedOpen=false
-        const settings = window._cachedSettings || await window.electronAPI.getSettings();
-        settings.expandedOpen = isExpanded;
-        window._cachedSettings = settings;
-        await window.electronAPI.saveSettings(settings);
-        
-        // Trigger immediate fetch if panel was just opened (collapsed → expanded)
-        // This ensures fresh overage/prepaid data is available when user expands the panel
-        // Pass forceExtended to bypass any cached setting and fetch extended data immediately
-        if (!wasExpanded && isExpanded) {
-            debugLog('[Conditional Polling] Panel expanded - triggering immediate fetch with extended data');
-            await fetchUsageData({ forceExtended: true });
-        }
-    });
-
-    // Settings close
+    // Settings — Done
     elements.closeSettingsBtn.addEventListener('click', async () => {
         await saveSettings();
         elements.settingsOverlay.style.display = 'none';
-        if (_settingsOpenedFromCompact) {
-            _settingsOpenedFromCompact = false;
-            if (isCompactMode) {
-                window.electronAPI.setCompactMode(true);
-            } else {
-                resizeWidget();
-            }
-        } else if (!isCompactMode) {
-            resizeWidget();
-        }
+        resizeWidget();
         startAutoUpdate();
-    });
-
-    elements.logoutBtn.addEventListener('click', async () => {
-        await window.electronAPI.deleteCredentials();
-        credentials = { sessionKey: null, organizationId: null };
-        elements.settingsOverlay.style.display = 'none';
-        showLoginRequired();
     });
 
     elements.coffeeBtn.addEventListener('click', () => {
@@ -334,119 +235,130 @@ function setupEventListeners() {
         });
     });
 
-    // Prevent accidental app hiding: bidirectional coupling between Hide from Taskbar and Show Tray Stats
-    // If user enables "Hide from Taskbar", automatically enable "Show Tray Stats" (ensures tray icon is visible)
+    // Prevent accidental app hiding: couple Hide-from-Taskbar and Show-Tray-Stats
     elements.minimizeToTrayToggle.addEventListener('change', () => {
         if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
             elements.showTrayStatsToggle.checked = true;
         }
     });
-
-    // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
     elements.showTrayStatsToggle.addEventListener('change', () => {
         if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
             elements.minimizeToTrayToggle.checked = false;
         }
     });
 
-    // Listen for refresh requests from tray
+    // Tray "Refresh" → re-poll every account
     window.electronAPI.onRefreshUsage(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
+        await pollAllAccounts();
         if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
     });
 
-    // Listen for session expiration events (403 errors)
-    window.electronAPI.onSessionExpired(() => {
-        debugLog('Session expired event received');
-        credentials = { sessionKey: null, organizationId: null };
-        showLoginRequired();
+    // A single account's session expired — flag just that card for reconnect
+    window.electronAPI.onAccountSessionExpired((accountId) => {
+        debugLog('Account session expired:', accountId);
+        markAccountExpired(accountId);
     });
 
-    // Update banner
+    // Update banner (points at this fork's releases)
     elements.updateBannerDismiss.addEventListener('click', () => {
         elements.updateBanner.style.display = 'none';
         resizeWidget();
     });
     elements.updateBannerText.addEventListener('click', () => {
-        window.electronAPI.openExternal(`https://github.com/SlavomirDurej/claude-usage-widget/releases/latest`);
+        window.electronAPI.openExternal(RELEASES_URL);
     });
     elements.settingsUpdateLink.addEventListener('click', () => {
-        window.electronAPI.openExternal(`https://github.com/SlavomirDurej/claude-usage-widget/releases/latest`);
+        window.electronAPI.openExternal(RELEASES_URL);
     });
 
-    // Compact mode — collapse chevron (normal → compact)
-    elements.compactCollapseBtn.addEventListener('click', async () => {
-        applyCompactMode(true);
-        await _saveCompactSetting(true);
-    });
-
-    // Compact mode — expand chevron (compact → normal)
-    elements.compactExpandBtn.addEventListener('click', async () => {
-        applyCompactMode(false);
-        await _saveCompactSetting(false);
-    });
-
-    // Compact mode toggle in normal settings panel — deferred to Done click
-
-    // Compact mode toggle in compact settings panel — just updates the checkbox, Done applies it
-    elements.compactModeToggleCompact.addEventListener('change', () => {
-        // No immediate action — Done button reads this value and applies
-    });
-
-    // Organization selector — change triggers immediate save and refresh
-    elements.orgSelector.addEventListener('change', handleOrgChange);
-
-    // Settings button — always open full settings; if in compact mode, temporarily expand the window first
+    // Settings button
     elements.settingsBtn.addEventListener('click', async () => {
         stopAutoUpdate();
-        if (isCompactMode) {
-            _settingsOpenedFromCompact = true;
-            window.electronAPI.setCompactMode(false);
-        }
         await loadSettings();
         elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(318);
-    });
-
-    // Close compact settings — apply compact toggle value then close
-    elements.closeCompactSettingsBtn.addEventListener('click', async () => {
-        const compact = elements.compactModeToggleCompact.checked;
-        if (compact !== isCompactMode) {
-            applyCompactMode(compact);
-            await _saveCompactSetting(compact);
-        }
-        elements.compactSettingsOverlay.style.display = 'none';
-        startAutoUpdate();
+        window.electronAPI.resizeWindow(SETTINGS_HEIGHT);
     });
 }
 
-// Handle manual sessionKey connect
+// ── Add-account flow ─────────────────────────────────────────────────────────
+// Opens the login container bound to a fresh draft partition. Step 1 = embedded
+// login (handles SSO in-window); step 2 = manual sessionKey paste (device-trust
+// fallback); step 3 = org picker when the account has more than one chat org.
+
+async function startAddAccount({ fromSettings }) {
+    addingFromSettings = fromSettings;
+    draftAccount = await window.electronAPI.createDraftAccount();
+    pendingValidation = null;
+    stopAutoUpdate();
+    showAddAccountUI();
+}
+
+function showAddAccountUI() {
+    elements.loadingContainer.style.display = 'none';
+    elements.noUsageContainer.style.display = 'none';
+    elements.mainContent.style.display = 'none';
+    elements.settingsOverlay.style.display = 'none';
+    elements.loginContainer.style.display = 'flex';
+
+    // Reset to step 1
+    elements.loginStep1.style.display = 'flex';
+    elements.loginStep2.style.display = 'none';
+    elements.loginStep3.style.display = 'none';
+    elements.autoDetectError.textContent = '';
+    elements.sessionKeyError.textContent = '';
+    elements.sessionKeyInput.value = '';
+    elements.autoDetectBtn.disabled = false;
+    elements.autoDetectBtn.textContent = 'Log in';
+
+    // Cancel is only offered when there are existing accounts to return to
+    elements.loginTitle.textContent = draftAccount ? `Add account — ${draftAccount.label}` : 'Add account';
+    elements.loginCancelBtn.style.display = accounts.length > 0 ? 'inline-flex' : 'none';
+
+    // Hide header controls during the flow
+    elements.settingsBtn.style.display = 'none';
+    elements.refreshBtn.style.display = 'none';
+    elements.graphBtn.style.display = 'none';
+
+    window.electronAPI.resizeWindow(380);
+}
+
+function cancelAddAccount() {
+    // Discard the un-saved draft partition/id
+    if (draftAccount) {
+        window.electronAPI.removeAccount(draftAccount.id);
+        draftAccount = null;
+    }
+    pendingValidation = null;
+    elements.loginContainer.style.display = 'none';
+
+    if (accounts.length > 0) {
+        renderAccounts();
+        showMainContent();
+        startAutoUpdate();
+    } else {
+        // Cancelled first-run with no accounts — reopen the flow
+        startAddAccount({ fromSettings: false });
+    }
+}
+
+// Step 2: manual sessionKey connect
 async function handleConnect() {
     const sessionKey = elements.sessionKeyInput.value.trim();
     if (!sessionKey) {
         elements.sessionKeyError.textContent = 'Please paste your session key';
         return;
     }
+    if (!draftAccount) return;
 
     elements.connectBtn.disabled = true;
     elements.connectBtn.textContent = '...';
     elements.sessionKeyError.textContent = '';
 
     try {
-        const result = await window.electronAPI.validateSessionKey(sessionKey);
+        const result = await window.electronAPI.validateSessionKey(sessionKey, draftAccount.partition);
         if (result.success) {
-            credentials = { 
-                sessionKey, 
-                organizationId: result.organizationId,
-                organizations: result.organizations || []
-            };
-            await window.electronAPI.saveCredentials(credentials);
-            populateOrgSelector(result.organizations || [], result.organizationId);
-            elements.sessionKeyInput.value = '';
-            showMainContent();
-            await fetchUsageData();
-            startAutoUpdate();
+            await onValidated(sessionKey, result);
         } else {
             elements.sessionKeyError.textContent = result.error || 'Invalid session key';
         }
@@ -458,37 +370,26 @@ async function handleConnect() {
     }
 }
 
-// Handle auto-detect from browser cookies
+// Step 1: embedded login capture (also completes SSO in-window)
 async function handleAutoDetect() {
+    if (!draftAccount) return;
     elements.autoDetectBtn.disabled = true;
     elements.autoDetectBtn.textContent = 'Waiting...';
     elements.autoDetectError.textContent = '';
 
     try {
-        const result = await window.electronAPI.detectSessionKey();
+        const result = await window.electronAPI.detectSessionKey(draftAccount.partition);
         if (!result.success) {
             elements.autoDetectError.textContent = result.error || 'Login failed';
             return;
         }
 
-        // Got sessionKey from login, now validate it
         elements.autoDetectBtn.textContent = 'Validating...';
-        const validation = await window.electronAPI.validateSessionKey(result.sessionKey);
-
+        const validation = await window.electronAPI.validateSessionKey(result.sessionKey, draftAccount.partition);
         if (validation.success) {
-            credentials = {
-                sessionKey: result.sessionKey,
-                organizationId: validation.organizationId,
-                organizations: validation.organizations || []
-            };
-            await window.electronAPI.saveCredentials(credentials);
-            populateOrgSelector(validation.organizations || [], validation.organizationId);
-            showMainContent();
-            await fetchUsageData();
-            startAutoUpdate();
+            await onValidated(result.sessionKey, validation);
         } else {
-            elements.autoDetectError.textContent =
-                'Session invalid. Try again or use Manual →';
+            elements.autoDetectError.textContent = 'Session invalid. Try again or use Manual →';
         }
     } catch (error) {
         elements.autoDetectError.textContent = error.message || 'Login failed';
@@ -498,37 +399,280 @@ async function handleAutoDetect() {
     }
 }
 
-// Fetch usage data from Claude API
-async function fetchUsageData(options = {}) {
-    debugLog('fetchUsageData called');
-
-    if (isFetching) {
-        debugLog('Fetch already in flight — skipping');
+// After a sessionKey validates: pick an org (>1) or save straight away.
+async function onValidated(sessionKey, validation) {
+    const orgs = validation.organizations || [];
+    if (orgs.length > 1) {
+        pendingValidation = { sessionKey, organizations: orgs };
+        showOrgPicker(orgs);
         return;
     }
+    await completeAddAccount(sessionKey, validation.organizationId, orgs);
+}
 
-    if (!credentials.sessionKey || !credentials.organizationId) {
-        debugLog('Missing credentials, showing login');
-        showLoginRequired();
+function showOrgPicker(orgs) {
+    elements.loginStep1.style.display = 'none';
+    elements.loginStep2.style.display = 'none';
+    elements.loginStep3.style.display = 'block';
+    elements.orgPickerError.textContent = '';
+    elements.orgPickerSelect.innerHTML = '';
+    for (const org of orgs) {
+        const option = document.createElement('option');
+        option.value = org.id;
+        option.textContent = `${org.name}${org.isTeam ? ' (Team)' : ' (Personal)'}`;
+        elements.orgPickerSelect.appendChild(option);
+    }
+}
+
+// Step 3: confirm the chosen org
+async function handleOrgPick() {
+    if (!pendingValidation) return;
+    const orgId = elements.orgPickerSelect.value;
+    const validation = pendingValidation;
+    pendingValidation = null;
+    await completeAddAccount(validation.sessionKey, orgId, validation.organizations);
+}
+
+async function completeAddAccount(sessionKey, organizationId, organizations) {
+    if (!draftAccount) return;
+    await window.electronAPI.saveAccount({
+        id: draftAccount.id,
+        label: draftAccount.label,
+        sessionKey,
+        organizationId,
+        organizations
+    });
+    draftAccount = null;
+
+    // Reload accounts from the store and show the widget
+    accounts = await window.electronAPI.getAccounts();
+    elements.loginContainer.style.display = 'none';
+    elements.sessionKeyInput.value = '';
+    renderAccounts();
+    showMainContent();
+    await pollAllAccounts();
+    startAutoUpdate();
+}
+
+// ── Polling ──────────────────────────────────────────────────────────────────
+// Poll each account sequentially — one hidden fetch window at a time keeps the
+// main window's z-order stable. A per-account guard prevents overlap.
+async function pollAllAccounts() {
+    for (const account of accounts) {
+        await fetchAccount(account.id);
+    }
+}
+
+async function fetchAccount(accountId) {
+    if (fetchingAccounts.has(accountId)) {
+        debugLog('Fetch already in flight for', accountId);
         return;
     }
-
-    isFetching = true;
+    fetchingAccounts.add(accountId);
     try {
-        debugLog('Calling electronAPI.fetchUsageData...');
-        const data = await window.electronAPI.fetchUsageData(options);
-        debugLog('Received usage data:', data);
-        updateUI(data);
+        const data = await window.electronAPI.fetchUsageData(accountId);
+        usageByAccount[accountId] = data;
+        clearAccountExpired(accountId);
+        updateAccountCard(accountId, data);
     } catch (error) {
-        console.error('Error fetching usage data:', error);
-        if (error.message.includes('SessionExpired') || error.message.includes('Unauthorized')) {
-            credentials = { sessionKey: null, organizationId: null };
-            showLoginRequired();
-        } else {
-            debugLog('Failed to fetch usage data');
+        console.error(`Error fetching usage for ${accountId}:`, error);
+        if (String(error.message).includes('SessionExpired') || String(error.message).includes('Unauthorized')) {
+            markAccountExpired(accountId);
         }
     } finally {
-        isFetching = false;
+        fetchingAccounts.delete(accountId);
+    }
+}
+
+// ── Account cards ────────────────────────────────────────────────────────────
+
+// Rebuild the card stack from the current accounts list.
+function renderAccounts() {
+    cardsById.clear();
+    elements.accountsContainer.innerHTML = '';
+    for (const account of accounts) {
+        renderAccountCard(account);
+        if (usageByAccount[account.id]) {
+            updateAccountCard(account.id, usageByAccount[account.id]);
+        }
+        if (expiredAccounts.has(account.id)) {
+            markAccountExpired(account.id);
+        }
+    }
+    if (!isCompactMode) resizeWidget();
+}
+
+// Clone the template for one account and cache its scoped elements.
+function renderAccountCard(account) {
+    const fragment = elements.accountCardTemplate.content.cloneNode(true);
+    const card = fragment.querySelector('.account-card');
+    card.dataset.accountId = account.id;
+
+    const els = {
+        label: card.querySelector('.account-label'),
+        reconnectBtn: card.querySelector('.account-reconnect-btn'),
+        sessionProgress: card.querySelector('.session-progress'),
+        sessionPercentage: card.querySelector('.session-percentage'),
+        sessionTimer: card.querySelector('.session-timer'),
+        sessionTimeText: card.querySelector('.session-time-text'),
+        sessionResetsAt: card.querySelector('.session-resets-at'),
+        weeklyProgress: card.querySelector('.weekly-progress'),
+        weeklyPercentage: card.querySelector('.weekly-percentage'),
+        weeklyTimer: card.querySelector('.weekly-timer'),
+        weeklyTimeText: card.querySelector('.weekly-time-text'),
+        weeklyResetsAt: card.querySelector('.weekly-resets-at')
+    };
+
+    els.label.textContent = account.label;
+    els.reconnectBtn.addEventListener('click', () => reconnectAccount(account.id));
+
+    elements.accountsContainer.appendChild(card);
+    cardsById.set(account.id, { card, els });
+}
+
+// Update one card's bars, percentages, timers and reset labels.
+function updateAccountCard(accountId, data) {
+    const entry = cardsById.get(accountId);
+    if (!entry) return;
+    const { els } = entry;
+    const settings = window._cachedSettings || {};
+    const timeFormat = settings.timeFormat || '12h';
+    const weeklyDateFormat = settings.weeklyDateFormat || 'date';
+
+    const sessionUtil = data?.five_hour?.utilization || 0;
+    const sessionResetsAt = data?.five_hour?.resets_at;
+    const weeklyUtil = data?.seven_day?.utilization || 0;
+    const weeklyResetsAt = data?.seven_day?.resets_at;
+
+    updateProgressBar(els.sessionProgress, els.sessionPercentage, sessionUtil);
+    updateTimer(els.sessionTimer, els.sessionTimeText, sessionResetsAt, 5 * 60);
+    els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
+    els.sessionResetsAt.style.opacity = sessionResetsAt ? '1' : '0.4';
+
+    updateProgressBar(els.weeklyProgress, els.weeklyPercentage, weeklyUtil, true);
+    updateTimer(els.weeklyTimer, els.weeklyTimeText, weeklyResetsAt, 7 * 24 * 60);
+    els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
+    els.weeklyResetsAt.style.opacity = weeklyResetsAt ? '1' : '0.4';
+
+    updateWorstBadge();
+    if (!isCompactMode) resizeWidget();
+}
+
+// Recompute the circular timers/countdowns for every card (called on an interval).
+function refreshAllCardTimers() {
+    const settings = window._cachedSettings || {};
+    const timeFormat = settings.timeFormat || '12h';
+    const weeklyDateFormat = settings.weeklyDateFormat || 'date';
+
+    for (const account of accounts) {
+        const entry = cardsById.get(account.id);
+        const data = usageByAccount[account.id];
+        if (!entry || !data) continue;
+        const { els } = entry;
+        const sessionResetsAt = data?.five_hour?.resets_at;
+        const weeklyResetsAt = data?.seven_day?.resets_at;
+        updateTimer(els.sessionTimer, els.sessionTimeText, sessionResetsAt, 5 * 60);
+        els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
+        updateTimer(els.weeklyTimer, els.weeklyTimeText, weeklyResetsAt, 7 * 24 * 60);
+        els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
+    }
+}
+
+// Highlight the card closest to a limit (max session/weekly across accounts).
+function updateWorstBadge() {
+    let worstId = null;
+    let worstVal = -1;
+    for (const account of accounts) {
+        const d = usageByAccount[account.id];
+        if (!d) continue;
+        const m = Math.max(d.five_hour?.utilization || 0, d.seven_day?.utilization || 0);
+        if (m > worstVal) { worstVal = m; worstId = account.id; }
+    }
+    for (const [id, entry] of cardsById) {
+        entry.card.classList.toggle('worst', id === worstId && accounts.length > 1);
+    }
+}
+
+function markAccountExpired(accountId) {
+    expiredAccounts.add(accountId);
+    const entry = cardsById.get(accountId);
+    if (entry) {
+        entry.card.classList.add('expired');
+        entry.els.reconnectBtn.style.display = 'inline-flex';
+    }
+    if (!isCompactMode) resizeWidget();
+}
+
+function clearAccountExpired(accountId) {
+    expiredAccounts.delete(accountId);
+    const entry = cardsById.get(accountId);
+    if (entry) {
+        entry.card.classList.remove('expired');
+        entry.els.reconnectBtn.style.display = 'none';
+    }
+}
+
+// Re-run the login flow for an existing account, reusing its partition.
+function reconnectAccount(accountId) {
+    const account = accounts.find(a => a.id === accountId);
+    if (!account) return;
+    draftAccount = { id: account.id, partition: account.partition || `persist:acct-${account.id}`, label: account.label };
+    addingFromSettings = false;
+    pendingValidation = null;
+    stopAutoUpdate();
+    showAddAccountUI();
+}
+
+// ── Accounts settings list ───────────────────────────────────────────────────
+function renderAccountsList() {
+    elements.accountsList.innerHTML = '';
+    for (const account of accounts) {
+        const row = document.createElement('div');
+        row.className = 'account-row';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'account-label-input';
+        input.value = account.label;
+        input.spellcheck = false;
+        const commit = async () => {
+            const label = input.value.trim() || account.label;
+            input.value = label;
+            if (label !== account.label) {
+                account.label = label;
+                await window.electronAPI.renameAccount(account.id, label);
+                const entry = cardsById.get(account.id);
+                if (entry) entry.els.label.textContent = label;
+            }
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'account-remove-btn';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => removeAccountFromUI(account.id));
+
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        elements.accountsList.appendChild(row);
+    }
+}
+
+async function removeAccountFromUI(accountId) {
+    await window.electronAPI.removeAccount(accountId);
+    accounts = accounts.filter(a => a.id !== accountId);
+    delete usageByAccount[accountId];
+    expiredAccounts.delete(accountId);
+    const entry = cardsById.get(accountId);
+    if (entry) { entry.card.remove(); cardsById.delete(accountId); }
+    renderAccountsList();
+    if (accounts.length === 0) {
+        elements.settingsOverlay.style.display = 'none';
+        startAddAccount({ fromSettings: false });
+    } else {
+        updateWorstBadge();
+        resizeWidget();
     }
 }
 
@@ -746,48 +890,33 @@ function refreshExtraTimers() {
 const BANNER_HEIGHT = 28;
 const EXPAND_OVERHEAD = 28; // margin-top(12) + padding-top(6) + bottom buffer(10)
 
-function resizeWidget(bannerVisible) {
-    const hasBanner = bannerVisible !== undefined
-        ? bannerVisible
-        : elements.updateBanner.style.display !== 'none';
-    const bannerOffset = hasBanner ? BANNER_HEIGHT : 0;
-    const extraCount = elements.extraRows.children.length;
-    const expandedOffset = isExpanded && extraCount > 0
-        ? EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT)
-        : 0;
-    const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
-    const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + bannerOffset;
+// Size the window to the rendered content. We sum the title bar + update banner
+// + the visible state container (mainContent or the add-account view). Measuring
+// the content — rather than the 100vh #widgetContainer, whose scrollHeight can't
+// report a height smaller than the current window — lets the widget both grow for
+// extra account cards and shrink back down.
+function resizeWidget() {
+    const titleBar = document.getElementById('titleBar');
+    let h = titleBar ? titleBar.offsetHeight : 36;
+
+    if (elements.updateBanner && elements.updateBanner.style.display !== 'none') {
+        h += elements.updateBanner.offsetHeight;
+    }
+
+    if (elements.mainContent.style.display !== 'none') {
+        h += elements.mainContent.scrollHeight;
+    } else if (elements.loginContainer.style.display !== 'none') {
+        h += elements.loginContainer.scrollHeight;
+    } else {
+        h = WIDGET_HEIGHT_COLLAPSED;
+    }
+
+    const totalHeight = Math.max(WIDGET_HEIGHT_COLLAPSED, Math.ceil(h) + 4);
     window.electronAPI.resizeWindow(totalHeight);
 }
 
 function normalizeUsageData(data) {
     return data;
-}
-
-function updateUI(data) {
-    latestUsageData = normalizeUsageData(data);
-
-    showMainContent();
-    buildExtraRows(data);
-    refreshTimers();
-    if (isExpanded) refreshExtraTimers();
-    if (!isCompactMode) resizeWidget();
-    startCountdown();
-    if (graphVisible) {
-        loadChart();
-    }
-
-    // Update compact bars in parallel if compact mode is active
-    if (isCompactMode) updateCompactBars(data);
-
-    // On first load, seed alert flags so we don't fire for thresholds
-    // the user can already see when the app starts
-    if (isFirstDataLoad) {
-        isFirstDataLoad = false;
-        seedAlertFlags(data);
-    }
-
-    checkUsageAlerts(data);
 }
 
 // Fire OS desktop notifications when usage crosses warn/danger thresholds.
@@ -987,88 +1116,10 @@ function seedAlertFlags(data) {
     }
 }
 
-function refreshTimers() {
-    if (!latestUsageData) return;
-
-    const settings = window._cachedSettings || {};
-    const timeFormat = settings.timeFormat || '12h';
-    const weeklyDateFormat = settings.weeklyDateFormat || 'date';
-
-    // Session data
-    const sessionUtilization = latestUsageData.five_hour?.utilization || 0;
-    const sessionResetsAt = latestUsageData.five_hour?.resets_at;
-
-    // Check if session timer has expired and we need to refresh
-    if (sessionResetsAt) {
-        const sessionDiff = new Date(sessionResetsAt) - new Date();
-        if (sessionDiff <= 0 && !sessionResetTriggered) {
-            sessionResetTriggered = true;
-            debugLog('Session timer expired, triggering refresh...');
-            // Wait a few seconds for the server to update, then refresh
-            setTimeout(() => {
-                fetchUsageData();
-                checkForUpdate();
-            }, 3000);
-        } else if (sessionDiff > 0) {
-            sessionResetTriggered = false; // Reset flag when timer is active again
-        }
-    }
-
-    updateProgressBar(
-        elements.sessionProgress,
-        elements.sessionPercentage,
-        sessionUtilization
-    );
-
-    updateTimer(
-        elements.sessionTimer,
-        elements.sessionTimeText,
-        sessionResetsAt,
-        5 * 60 // 5 hours in minutes
-    );
-    elements.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
-    elements.sessionResetsAt.style.opacity = sessionResetsAt ? '1' : '0.4';
-
-    // Weekly data
-    const weeklyUtilization = latestUsageData.seven_day?.utilization || 0;
-    const weeklyResetsAt = latestUsageData.seven_day?.resets_at;
-
-    // Check if weekly timer has expired and we need to refresh
-    if (weeklyResetsAt) {
-        const weeklyDiff = new Date(weeklyResetsAt) - new Date();
-        if (weeklyDiff <= 0 && !weeklyResetTriggered) {
-            weeklyResetTriggered = true;
-            debugLog('Weekly timer expired, triggering refresh...');
-            setTimeout(() => {
-                fetchUsageData();
-            }, 3000);
-        } else if (weeklyDiff > 0) {
-            weeklyResetTriggered = false;
-        }
-    }
-
-    updateProgressBar(
-        elements.weeklyProgress,
-        elements.weeklyPercentage,
-        weeklyUtilization,
-        true
-    );
-
-    updateTimer(
-        elements.weeklyTimer,
-        elements.weeklyTimeText,
-        weeklyResetsAt,
-        7 * 24 * 60 // 7 days in minutes
-    );
-    elements.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
-    elements.weeklyResetsAt.style.opacity = weeklyResetsAt ? '1' : '0.4';
-}
-
 function startCountdown() {
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(() => {
-        refreshTimers();
-        if (isExpanded) refreshExtraTimers();
+        refreshAllCardTimers();
     }, 30000);
 }
 
@@ -1183,59 +1234,16 @@ function updateTimer(timerElement, textElement, resetsAt, totalMinutes) {
 }
 
 // UI State Management
-function showLoginRequired() {
-    elements.loadingContainer.style.display = 'none';
-    elements.loginContainer.style.display = 'flex';
-    elements.noUsageContainer.style.display = 'none';
-    elements.mainContent.style.display = 'none';
-    // Reset to step 1
-    elements.loginStep1.style.display = 'flex';
-    elements.loginStep2.style.display = 'none';
-    elements.sessionKeyError.textContent = '';
-    elements.sessionKeyInput.value = '';
-    // Close any open overlays
-    elements.settingsOverlay.style.display = 'none';
-    elements.compactSettingsOverlay.style.display = 'none';
-    // Hide header buttons during login
-    elements.settingsBtn.style.display = 'none';
-    elements.refreshBtn.style.display = 'none';
-    elements.graphBtn.style.display = 'none';
-    stopAutoUpdate();
-    if (countdownInterval) {
-        clearInterval(countdownInterval);
-        countdownInterval = null;
-    }
-    // Reset fetch guard so it can't get permanently stuck across login/logout
-    isFetching = false;
-    // Reset alert state so a new session doesn't inherit suppressed alerts
-    isFirstDataLoad = true;
-    alertFired.session_warn = false;
-    alertFired.session_danger = false;
-    alertFired.weekly_warn = false;
-    alertFired.weekly_danger = false;
-    // Resize window to fit login content — without this the window stays at
-    // the default 155px widget height and the "Log in"/"Manual" buttons are
-    // clipped off-screen and unreachable on a frameless, non-resizable window.
-    window.electronAPI.resizeWindow(360);
-}
-
 function showMainContent() {
     elements.loadingContainer.style.display = 'none';
     elements.loginContainer.style.display = 'none';
     elements.noUsageContainer.style.display = 'none';
-    // Respect compact mode — don't force mainContent visible if we're in compact
-    if (!isCompactMode) {
-        elements.mainContent.style.display = 'block';
-    }
-    elements.compactContent.style.display = isCompactMode ? 'flex' : 'none';
-    // Always show collapse chevron here — applyCompactMode hides it when needed
-    if (elements.compactCollapseBtn) {
-        elements.compactCollapseBtn.style.display = isCompactMode ? 'none' : 'flex';
-    }
-    // Restore header buttons after login - but respect compact mode for graph button
+    elements.mainContent.style.display = 'block';
+    // Restore header buttons after the add-account flow (graph stays hidden in v1)
     elements.settingsBtn.style.display = 'flex';
     elements.refreshBtn.style.display = 'flex';
-    elements.graphBtn.style.display = isCompactMode ? 'none' : 'flex';
+    startCountdown();
+    resizeWidget();
 }
 
 // Auto-update management
@@ -1245,7 +1253,7 @@ function startAutoUpdate() {
     const intervalSecs = parseInt(settings.refreshInterval) || 300;
     updateInterval = setInterval(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
+        await pollAllAccounts();
         if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
     }, intervalSecs * 1000);
 }
@@ -1555,10 +1563,10 @@ async function loadSettings() {
     elements.usageAlertsToggle.checked = settings.usageAlerts !== false;
     if (elements.compactModeToggle) elements.compactModeToggle.checked = !!settings.compactMode;
 
-    // Populate org selector if user has organizations
-    if (credentials.organizations && credentials.organizations.length > 0) {
-        populateOrgSelector(credentials.organizations, credentials.organizationId);
-    }
+    // Render the accounts management list; the single-account "Log Out" is gone
+    // (accounts are removed individually from the list).
+    renderAccountsList();
+    if (elements.logoutBtn) elements.logoutBtn.style.display = 'none';
 
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
@@ -1580,12 +1588,6 @@ async function saveSettings() {
 
     warnThreshold = warn;
     dangerThreshold = danger;
-
-    // Apply compact mode change first, then include in saved settings
-    const compactToggleValue = elements.compactModeToggle.checked;
-    if (compactToggleValue !== isCompactMode) {
-        applyCompactMode(compactToggleValue);
-    }
 
     const settings = {
         autoStart: (window.electronAPI.platform === 'linux' || window.electronAPI.isPortable) ? false : elements.autoStartToggle.checked,
@@ -1610,14 +1612,9 @@ async function saveSettings() {
         document.getElementById('trayLabel').textContent = 'Hide from Dock';
     }
 
-    // Re-render resets-at values immediately with new format
-    if (latestUsageData) {
-        refreshTimers();
-        // Rebuild extra rows to apply new threshold colors
-        if (isExpanded) {
-            buildExtraRows(latestUsageData);
-            refreshExtraTimers();
-        }
+    // Re-render each card so new thresholds / time formats apply immediately
+    for (const account of accounts) {
+        if (usageByAccount[account.id]) updateAccountCard(account.id, usageByAccount[account.id]);
     }
     // Restart auto-update with new interval if it changed
     startAutoUpdate();

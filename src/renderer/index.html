@@ -35,7 +35,7 @@
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                         </svg>
                     </button>
-                    <button class="control-btn graph-btn" id="graphBtn" title="Toggle Usage Graph">
+                    <button class="control-btn graph-btn" id="graphBtn" title="Toggle Usage Graph" style="display: none;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                         </svg>
@@ -60,6 +60,10 @@
             <!-- Login -->
             <div class="login-container" id="loginContainer" style="display: none;">
                 <div class="login-content">
+                    <div class="login-topbar">
+                        <span class="login-title" id="loginTitle">Add account</span>
+                        <button class="login-cancel-btn" id="loginCancelBtn" title="Cancel" style="display: none;">✕</button>
+                    </div>
                     <div class="login-step1" id="loginStep1">
                         <div class="step-icon">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -97,6 +101,16 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="login-step3" id="loginStep3" style="display: none;">
+                        <div class="org-picker">
+                            <h3>Choose an organisation</h3>
+                            <p class="step-hint">This account belongs to more than one organisation. Pick the one to monitor.</p>
+                            <select id="orgPickerSelect" class="settings-select"></select>
+                            <button class="connect-btn" id="orgPickerConfirmBtn">Continue</button>
+                            <p class="step-error" id="orgPickerError"></p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -121,57 +135,68 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
 
-                <!-- Column Headers -->
-                <div class="usage-headers">
-                    <span></span>
-                    <span class="col-header col-header-center">Session Used</span>
-                    <span class="col-header col-header-center">Elapsed</span>
-                    <span class="col-header col-header-center">Resets In</span>
-                    <span class="col-header col-header-center">Resets At</span>
-                </div>
+                <!-- Multi-account cards render here, one per account -->
+                <div id="accountsContainer"></div>
 
-                <!-- Session Usage -->
-                <div class="usage-section">
-                    <span class="usage-label">Current Session</span>
-                    <div class="usage-bar-group">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="sessionProgress" style="width: 0%"></div>
+                <!-- Card template, cloned once per account. Uses classes (not ids)
+                     so multiple cards coexist; app.js scopes queries to each card. -->
+                <template id="accountCardTemplate">
+                    <div class="account-card" data-account-id="">
+                        <div class="account-card-header">
+                            <span class="account-label"></span>
+                            <button class="account-reconnect-btn" style="display: none;">Session expired — Reconnect</button>
                         </div>
-                        <span class="usage-percentage" id="sessionPercentage">0%</span>
-                    </div>
-                    <div class="usage-elapsed-group">
-                        <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
-                            <circle class="timer-bg" cx="12" cy="12" r="10" />
-                            <circle class="timer-progress" id="sessionTimer" cx="12" cy="12" r="10"
-                                style="stroke-dasharray: 63; stroke-dashoffset: 63" />
-                        </svg>
-                    </div>
-                    <div class="timer-text" id="sessionTimeText">--:--</div>
-                    <div class="resets-at-text" id="sessionResetsAt">--</div>
-                </div>
 
-                <!-- Weekly Usage -->
-                <div class="usage-section">
-                    <span class="usage-label">Weekly Limit</span>
-                    <div class="usage-bar-group">
-                        <div class="progress-bar">
-                            <div class="progress-fill weekly" id="weeklyProgress" style="width: 0%"></div>
+                        <div class="usage-headers">
+                            <span></span>
+                            <span class="col-header col-header-center">Session Used</span>
+                            <span class="col-header col-header-center">Elapsed</span>
+                            <span class="col-header col-header-center">Resets In</span>
+                            <span class="col-header col-header-center">Resets At</span>
                         </div>
-                        <span class="usage-percentage" id="weeklyPercentage">0%</span>
-                    </div>
-                    <div class="usage-elapsed-group">
-                        <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
-                            <circle class="timer-bg" cx="12" cy="12" r="10" />
-                            <circle class="timer-progress weekly" id="weeklyTimer" cx="12" cy="12" r="10"
-                                style="stroke-dasharray: 63; stroke-dashoffset: 63" />
-                        </svg>
-                    </div>
-                    <div class="timer-text" id="weeklyTimeText">--:--</div>
-                    <div class="resets-at-text" id="weeklyResetsAt">--</div>
-                </div>
 
-                <!-- Expand Toggle -->
-                <div class="expand-toggle" id="expandToggle">
+                        <div class="usage-section">
+                            <span class="usage-label">Current Session</span>
+                            <div class="usage-bar-group">
+                                <div class="progress-bar">
+                                    <div class="progress-fill session-progress" style="width: 0%"></div>
+                                </div>
+                                <span class="usage-percentage session-percentage">0%</span>
+                            </div>
+                            <div class="usage-elapsed-group">
+                                <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                                    <circle class="timer-bg" cx="12" cy="12" r="10" />
+                                    <circle class="timer-progress session-timer" cx="12" cy="12" r="10"
+                                        style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                                </svg>
+                            </div>
+                            <div class="timer-text session-time-text">--:--</div>
+                            <div class="resets-at-text session-resets-at">--</div>
+                        </div>
+
+                        <div class="usage-section">
+                            <span class="usage-label">Weekly Limit</span>
+                            <div class="usage-bar-group">
+                                <div class="progress-bar">
+                                    <div class="progress-fill weekly weekly-progress" style="width: 0%"></div>
+                                </div>
+                                <span class="usage-percentage weekly-percentage">0%</span>
+                            </div>
+                            <div class="usage-elapsed-group">
+                                <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                                    <circle class="timer-bg" cx="12" cy="12" r="10" />
+                                    <circle class="timer-progress weekly weekly-timer" cx="12" cy="12" r="10"
+                                        style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                                </svg>
+                            </div>
+                            <div class="timer-text weekly-time-text">--:--</div>
+                            <div class="resets-at-text weekly-resets-at">--</div>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Expand Toggle (retained for future extra-usage rows; hidden in v1) -->
+                <div class="expand-toggle" id="expandToggle" style="display: none;">
                     <svg class="expand-arrow" id="expandArrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <polyline points="6 9 12 15 18 9" />
                     </svg>
@@ -230,6 +255,15 @@
                     </div>
 
                     <div class="settings-rows">
+                        <!-- Accounts management -->
+                        <div class="settings-accounts">
+                            <div class="settings-accounts-header">
+                                <span class="settings-row-label">Accounts</span>
+                                <button class="add-account-btn" id="addAccountBtn">+ Add account</button>
+                            </div>
+                            <div class="accounts-list" id="accountsList"></div>
+                        </div>
+
                         <!-- Row 1: two toggles -->
                         <div class="settings-row-2col">
                             <div class="settings-col" id="autoStartCol">
@@ -267,8 +301,8 @@
                             </div>
                         </div>
 
-                        <!-- Row 3: compact mode + usage alerts -->
-                        <div class="settings-row-2col">
+                        <!-- Row 3: compact mode + usage alerts (retained, hidden in v1) -->
+                        <div class="settings-row-2col" style="display: none;">
                             <div class="settings-col">
                                 <span class="settings-row-label">Compact mode</span>
                                 <label class="toggle-switch">
