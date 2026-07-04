@@ -161,52 +161,56 @@
 
                 <!-- Card template, cloned once per account. Uses classes (not ids)
                      so multiple cards coexist; app.js scopes queries to each card.
-                     Structure mirrors the redesign mockup: circular session gauge,
-                     status chip, session-reset line, weekly bar + reset info. -->
+                     Table-block layout per the "Slate" mockup: name row (+ closest-
+                     to-limit badge), column headers, two data rows (session/weekly)
+                     with bar + % + elapsed ring + resets-in + resets-at. -->
                 <template id="accountCardTemplate">
-                    <div class="account-card status-healthy" data-account-id="">
-                        <div class="account-card-glow"></div>
-                        <div class="account-card-body">
-                            <!-- Circular session gauge -->
-                            <div class="gauge">
-                                <svg class="gauge-svg" width="82" height="82" viewBox="0 0 82 82">
-                                    <circle class="gauge-track" cx="41" cy="41" r="34"></circle>
-                                    <circle class="gauge-ring session-ring" cx="41" cy="41" r="34"></circle>
+                    <div class="account-block" data-account-id="">
+                        <div class="account-name-row">
+                            <span class="account-name"></span>
+                            <span class="account-badge" style="display: none;">
+                                <span class="account-badge-dot"></span>
+                                <span class="account-badge-label">CLOSEST TO LIMIT</span>
+                            </span>
+                        </div>
+
+                        <div class="account-col-headers">
+                            <span class="col-session-used">Session used</span>
+                            <span class="col-elapsed">Elapsed</span>
+                            <span class="col-resets-in">Resets in</span>
+                            <span class="col-resets-at">Resets at</span>
+                        </div>
+
+                        <div class="account-data-row session-row">
+                            <span class="row-label">Current session</span>
+                            <div class="row-bar"><div class="row-bar-fill session-fill"></div></div>
+                            <span class="row-pct session-pct">0%</span>
+                            <div class="row-ring">
+                                <svg width="34" height="34" viewBox="0 0 34 34">
+                                    <circle class="ring-track" cx="17" cy="17" r="13"></circle>
+                                    <circle class="ring-fill session-ring" cx="17" cy="17" r="13"></circle>
                                 </svg>
-                                <div class="gauge-center">
-                                    <div class="gauge-pct"><span class="session-percentage">0</span><span class="gauge-pct-sign">%</span></div>
-                                    <div class="gauge-sub">SESSION</div>
-                                </div>
                             </div>
+                            <span class="row-resets-in session-resets-in">—</span>
+                            <span class="row-resets-at session-resets-at">—</span>
+                        </div>
 
-                            <div class="account-main">
-                                <div class="account-top">
-                                    <div class="account-label"></div>
-                                    <div class="status-chip">
-                                        <div class="status-dot"></div>
-                                        <span class="status-text">HEALTHY</span>
-                                    </div>
-                                </div>
-
-                                <div class="reset-row">
-                                    <span class="reset-label">SESSION RESETS</span>
-                                    <span class="reset-value session-resets-at">—</span>
-                                </div>
-
-                                <div class="card-divider"></div>
-
-                                <div class="week-row">
-                                    <span class="week-label">WEEK</span>
-                                    <div class="week-bar">
-                                        <div class="week-bar-fill weekly-progress"></div>
-                                    </div>
-                                    <span class="week-pct weekly-percentage">0%</span>
-                                </div>
-                                <div class="week-reset weekly-resets-at">—</div>
+                        <div class="account-data-row weekly-row">
+                            <span class="row-label">Weekly limit</span>
+                            <div class="row-bar"><div class="row-bar-fill weekly-fill"></div></div>
+                            <span class="row-pct weekly-pct">0%</span>
+                            <div class="row-ring">
+                                <svg width="34" height="34" viewBox="0 0 34 34">
+                                    <circle class="ring-track" cx="17" cy="17" r="13"></circle>
+                                    <circle class="ring-fill weekly-ring" cx="17" cy="17" r="13"></circle>
+                                </svg>
                             </div>
+                            <span class="row-resets-in weekly-resets-in">—</span>
+                            <span class="row-resets-at weekly-resets-at">—</span>
                         </div>
 
                         <button class="account-reconnect-btn" style="display: none;">Session expired — Reconnect</button>
+                        <div class="account-divider"></div>
                     </div>
                 </template>
 
@@ -254,18 +258,13 @@
 
                         <div class="settings-divider"></div>
 
-                        <!-- Theme picker (5 named themes) -->
+                        <!-- Theme segmented control (Dark / Light / System) -->
                         <div>
-                            <div class="theme-picker-head">
-                                <span class="settings-row-label">Theme</span>
-                                <span class="theme-picker-name" id="themePickerName">Aurora</span>
-                            </div>
+                            <span class="settings-row-label">Theme</span>
                             <div class="theme-selector" id="themeSelector">
-                                <button class="theme-btn" data-theme="aurora"><span class="theme-btn-dot"></span>Aurora</button>
-                                <button class="theme-btn" data-theme="midnight"><span class="theme-btn-dot"></span>Midnight</button>
-                                <button class="theme-btn" data-theme="nebula"><span class="theme-btn-dot"></span>Nebula</button>
-                                <button class="theme-btn" data-theme="terminal"><span class="theme-btn-dot"></span>Terminal</button>
-                                <button class="theme-btn" data-theme="daylight"><span class="theme-btn-dot"></span>Daylight</button>
+                                <button class="theme-seg-btn" data-theme="dark">Dark</button>
+                                <button class="theme-seg-btn" data-theme="light">Light</button>
+                                <button class="theme-seg-btn" data-theme="system">System</button>
                             </div>
                         </div>
 
@@ -273,13 +272,6 @@
 
                         <!-- Toggles (2×2 grid, mockup order) -->
                         <div class="settings-toggles">
-                            <div class="settings-col">
-                                <span class="settings-row-label">Always on top</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="alwaysOnTopToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
                             <div class="settings-col" id="autoStartCol">
                                 <span class="settings-row-label">Launch at startup</span>
                                 <label class="toggle-switch">
@@ -296,17 +288,30 @@
                                 </label>
                             </div>
                             <div class="settings-col">
+                                <span class="settings-row-label">Always on top</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="alwaysOnTopToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-col">
                                 <span class="settings-row-label">Show tray stats</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="showTrayStatsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+                            <div class="settings-col">
+                                <span class="settings-row-label">Usage alerts</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="usageAlertsToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
 
-                        <!-- Retained (hidden in v1) — kept so app.js state stays intact -->
+                        <!-- Retained (unused feature — org picker for multi-org accounts) -->
                         <div style="display: none;">
-                            <label class="toggle-switch"><input type="checkbox" id="usageAlertsToggle"><span class="toggle-slider"></span></label>
                             <div id="orgSelectorCol" style="display: none;">
                                 <select id="orgSelector" class="settings-select"></select>
                             </div>

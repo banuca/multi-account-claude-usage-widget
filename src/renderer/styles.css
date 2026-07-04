@@ -1,57 +1,82 @@
 /* ============================================================================
-   Claude Usage Widget — themeable redesign
-   Fonts: Space Grotesk (UI) + JetBrains Mono (numbers/labels), self-hosted.
-   Theme neutrals/accent come from CSS variables set at runtime by app.js
-   (see THEMES in app.js — the mockup is the source of truth for the values).
-   Status colors (green/amber/red) are FIXED across every theme so the limit
-   signal stays readable — they are defined as constants here, never overridden.
+   Claude Usage Widget — "Slate" redesign (v2.0)
+   Fonts: Geist (UI) + Geist Mono (labels/numerals) + Source Serif 4 (wordmark
+   only), self-hosted. Theme neutrals come from CSS variables set at runtime
+   by app.js (see THEMES in app.js — the design token table is the source of
+   truth for every value). Accent/warn/danger/session/weekly/logo tokens are
+   theme-invariant — fixed here as constants, never overridden — so the limit
+   signal and brand accent read the same in Dark and Light.
    ========================================================================== */
 
 /* ── Fonts ──────────────────────────────────────────────────────────────── */
-@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 400; font-display: swap; src: url('../../assets/fonts/space-grotesk-400.woff2') format('woff2'); }
-@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 500; font-display: swap; src: url('../../assets/fonts/space-grotesk-500.woff2') format('woff2'); }
-@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 600; font-display: swap; src: url('../../assets/fonts/space-grotesk-600.woff2') format('woff2'); }
-@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 700; font-display: swap; src: url('../../assets/fonts/space-grotesk-700.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../../assets/fonts/jetbrains-mono-400.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../../assets/fonts/jetbrains-mono-500.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('../../assets/fonts/jetbrains-mono-600.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 700; font-display: swap; src: url('../../assets/fonts/jetbrains-mono-700.woff2') format('woff2'); }
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 400; font-display: swap; src: url('../../assets/fonts/geist-400.woff2') format('woff2'); }
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 500; font-display: swap; src: url('../../assets/fonts/geist-500.woff2') format('woff2'); }
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 600; font-display: swap; src: url('../../assets/fonts/geist-600.woff2') format('woff2'); }
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 700; font-display: swap; src: url('../../assets/fonts/geist-700.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../../assets/fonts/geist-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../../assets/fonts/geist-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'Source Serif 4'; font-style: normal; font-weight: 600; font-display: swap; src: url('../../assets/fonts/source-serif4-600.woff2') format('woff2'); }
 
 /* ── Variables ──────────────────────────────────────────────────────────── */
 :root {
-    --font-ui: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-ui: 'Geist', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
+    --font-serif: 'Source Serif 4', Georgia, serif;
 
-    /* Theme neutrals/accent — defaults are Aurora; app.js overrides live. */
-    --bg: rgba(38,34,32,.85);
-    --bg2: rgba(24,21,20,.92);
-    --surface: rgba(255,255,255,.035);
-    --border: rgba(255,255,255,.07);
+    /* Theme neutrals — defaults are Dark; app.js overrides live per THEMES. */
+    --bg: #232129;
+    --bg2: #1c1b22;
+    --border: rgba(255,255,255,.08);
     --line: rgba(255,255,255,.06);
-    --text: #f4efeb;
-    --muted: #a9a19a;
-    --faint: #7a726b;
-    --accent-grad: linear-gradient(140deg,#e08663,#c25f42);
-    --accent-solid: #e08663;
-    --accent-ink: #fff;
-    --chip: rgba(255,255,255,.05);
+    --text: #f2f0f5;
+    --muted: #8d899b;
+    --faint: #57536a;
+    --surface: #17161d;
+    --surface-border: rgba(255,255,255,.08);
+    --chip: rgba(255,255,255,.06);
+    --chip-hover: rgba(255,255,255,.12);
     --ring-track: rgba(255,255,255,.09);
-    --track: rgba(255,255,255,.08);
-    --shadow: 0 30px 60px -20px rgba(0,0,0,.6);
+    --track: rgba(255,255,255,.09);
+    --toggle-off: rgba(255,255,255,.12);
+    --titlebar-bg: rgba(0,0,0,.14);
+    --titlebar-border: rgba(255,255,255,.055);
+    --shadow: 0 32px 70px -18px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+    --accent-ink: #fff;
 
-    /* Fixed status colors — identical in every theme (see design rules). */
-    --ok: #57B894;
-    --ok-text: #8fd0b6;
-    --ok-chip-bg: rgba(87,184,148,.15);
-    --warn: #E0A34E;
-    --warn-text: #e8bd83;
-    --warn-chip-bg: rgba(224,163,78,.15);
-    --crit: #E5654B;
-    --crit-text: #f0a494;
-    --crit-chip-bg: rgba(229,101,75,.18);
-    --crit-card-bg: rgba(229,101,75,.08);
-    --crit-card-border: rgba(229,101,75,.28);
-    --crit-glow: rgba(229,101,75,.35);
+    /* Fixed tokens — identical in every theme. */
+    --acc: #8b7cf6;
+    --acc-soft: #8b7cf626;
+    --acc-border: #8b7cf65c;
+    --acc-glow: #8b7cf659;
+    --warn: #e8a33d;
+    --danger: #e5484d;
+    --danger-soft: rgba(229,72,77,.12);
+    --danger-border: rgba(229,72,77,.38);
+    --danger-text: #f2848b;
+    --session-grad: linear-gradient(90deg,#f2b25c,#e08a2e);
+    --session-glow: 0 0 10px rgba(232,150,60,.35);
+    --weekly-grad: linear-gradient(90deg,#5b8def,#3e6fd9);
+    --weekly-glow: 0 0 10px rgba(80,130,230,.3);
+    --logo-grad: linear-gradient(140deg,#F09A52,#D96A3B);
+    --logo-shadow: 0 2px 8px rgba(217,106,59,.35);
+    --coffee-soft: rgba(232,163,61,.08);
+    --coffee-border: rgba(232,163,61,.4);
+    --coffee-text: #e8b04e;
+
+    /* Legacy variable names kept as aliases onto the fixed tokens above, for
+       UI areas outside the redesign's explicit scope (login flow, spinner,
+       the hidden legacy expand-rows panel) that still reference them. */
+    --accent-solid: var(--acc);
+    --accent-grad: var(--acc); /* flat, not a gradient — matches the new "accent bg" buttons */
+    --ok: var(--acc);
+    --ok-text: var(--acc);
+    --ok-chip-bg: var(--acc-soft);
+    --crit: var(--danger);
+    --crit-text: var(--danger-text);
+    --crit-chip-bg: var(--danger-soft);
+    --crit-card-bg: var(--danger-soft);
+    --crit-card-border: var(--danger-border);
+    --crit-glow: var(--danger-border);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; outline: none; }
@@ -92,13 +117,13 @@ body {
 .widget-container {
     width: 100vw;
     height: 100vh;
-    background: linear-gradient(158deg, var(--bg), var(--bg2));
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
     -webkit-backdrop-filter: blur(28px);
     backdrop-filter: blur(28px);
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 20px;
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.05);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
 }
@@ -109,7 +134,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 16px 12px;
+    padding: 10px 12px;
+    background: var(--titlebar-bg);
+    border-bottom: 1px solid var(--titlebar-border);
     flex-shrink: 0;
 }
 
@@ -117,19 +144,21 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-family: var(--font-ui);
+    font-family: var(--font-serif);
     font-weight: 600;
     font-size: 14.5px;
     color: var(--text);
     letter-spacing: -.01em;
 }
 
-/* Accent logo square with rotated diamond (from mockup) */
+/* 26px circular logo, orange gradient (fixed — not theme accent), inner
+   rotated white square. */
 .app-logo {
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
-    background: var(--accent-grad);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--logo-grad);
+    box-shadow: var(--logo-shadow);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -137,8 +166,8 @@ body {
 }
 .app-logo::after {
     content: '';
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     border-radius: 2px;
     background: #fff;
     transform: rotate(45deg);
@@ -152,11 +181,11 @@ body {
 }
 
 .control-btn {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     border: none;
-    background: transparent;
-    color: var(--faint);
+    background: var(--chip);
+    color: #b3aec0;
     border-radius: 8px;
     cursor: pointer;
     display: flex;
@@ -166,22 +195,14 @@ body {
     transition: background .18s ease, color .18s ease;
 }
 
-/* Settings + refresh get a chip background and brighter icon (mockup). */
-.settings-btn,
-.refresh-btn,
-.graph-btn {
-    background: var(--chip);
-    color: var(--muted);
-}
-
 .control-btn:hover {
-    background: var(--chip);
+    background: var(--chip-hover);
     color: var(--text);
 }
 
 .close-btn:hover {
-    background: var(--crit-chip-bg);
-    color: var(--crit);
+    background: rgba(229,72,77,.22);
+    color: var(--danger-text);
 }
 
 .refresh-btn svg { display: block; }
@@ -190,14 +211,7 @@ body {
 .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Divider under the title bar */
-.title-bar::after { content: none; }
-.title-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--line), transparent);
-    margin: 0 16px;
-    flex-shrink: 0;
-}
+.title-divider { display: none; } /* superseded by the titlebar's own bottom border */
 
 /* ── Loading ────────────────────────────────────────────────────────────── */
 .loading-container {
@@ -396,201 +410,169 @@ body {
     padding-right: 4px;
 }
 
-/* One card per account */
-.account-card {
-    position: relative;
-    border-radius: 16px;
-    padding: 15px 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    overflow: hidden;
-}
+/* ── Account table blocks (per the "Slate" mockup) ──────────────────────── */
+#accountsContainer { container-type: inline-size; container-name: accounts; }
 
-/* At-limit card gets the red tint + border + animated glow (mockup). */
-.account-card.status-limit {
-    background: var(--crit-card-bg);
-    border-color: var(--crit-card-border);
-}
-.account-card-glow {
-    position: absolute;
-    inset: -40% 40% auto -20%;
-    height: 120px;
-    background: radial-gradient(closest-side, var(--crit-glow), transparent);
-    filter: blur(8px);
-    animation: cu-glow 4s ease-in-out infinite;
-    display: none;
-    pointer-events: none;
-}
-.account-card.status-limit .account-card-glow { display: block; }
+.account-block { position: relative; }
 
-.account-card-body {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-/* Circular session gauge */
-.gauge {
-    position: relative;
-    width: 82px;
-    height: 82px;
-    flex-shrink: 0;
-}
-.gauge-svg { transform: rotate(-90deg); }
-.gauge-track { fill: none; stroke: var(--ring-track); stroke-width: 7; }
-.gauge-ring {
-    fill: none;
-    stroke: var(--ok);
-    stroke-width: 7;
-    stroke-linecap: round;
-    stroke-dasharray: 213.6;
-    stroke-dashoffset: 213.6;
-    transition: stroke-dashoffset .6s ease, stroke .2s ease;
-}
-.account-card.status-warn  .gauge-ring { stroke: var(--warn); }
-.account-card.status-limit .gauge-ring { stroke: var(--crit); }
-
-.gauge-center {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-.gauge-pct {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 19px;
-    color: var(--text);
-    line-height: 1;
-}
-.gauge-pct-sign { font-size: 11px; color: var(--muted); }
-.gauge-sub {
-    font-family: var(--font-mono);
-    font-size: 8.5px;
-    color: var(--faint);
-    letter-spacing: .1em;
-    margin-top: 2px;
-}
-
-/* Right-hand column */
-.account-main { flex: 1; min-width: 0; }
-
-.account-top {
+.account-name-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
-.account-label {
+.account-name {
     font-family: var(--font-ui);
     font-weight: 600;
-    font-size: 15px;
+    font-size: 14.5px;
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* Status chip — color set by card status class (fixed status palette) */
-.status-chip {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 9px;
-    border-radius: 20px;
+/* "Closest to limit" badge — shown only on the worst account when ≥2 accounts
+   exist and its max(session, weekly) has crossed the warn threshold. */
+.account-badge { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.account-badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 8px rgba(232,163,61,.6);
+    animation: cu-pulse 1.8s ease-in-out infinite;
     flex-shrink: 0;
-    background: var(--ok-chip-bg);
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-.status-text {
+.account-badge-label {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: .04em;
-    color: var(--ok-text);
+    color: var(--warn);
+    white-space: nowrap;
 }
-.account-card.status-warn  .status-chip { background: var(--warn-chip-bg); }
-.account-card.status-warn  .status-dot  { background: var(--warn); }
-.account-card.status-warn  .status-text { color: var(--warn-text); }
-.account-card.status-limit .status-chip { background: var(--crit-chip-bg); }
-.account-card.status-limit .status-dot  { background: var(--crit); animation: cu-pulse 1.6s ease-in-out infinite; }
-.account-card.status-limit .status-text { color: var(--crit-text); }
 
-/* Session reset row */
-.reset-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 4px;
+.account-col-headers,
+.account-data-row {
+    display: grid;
+    grid-template-columns: minmax(110px,140px) 1fr 48px 40px 82px 74px;
+    column-gap: 14px;
 }
-.reset-label {
+.account-col-headers {
     font-family: var(--font-mono);
     font-size: 9.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
     color: var(--faint);
-    letter-spacing: .12em;
+    margin-bottom: 8px;
 }
-.reset-value {
+.col-session-used { grid-column: 2 / 4; }
+.col-elapsed { grid-column: 4; text-align: center; }
+.col-resets-in { grid-column: 5; text-align: right; }
+.col-resets-at { grid-column: 6; text-align: right; }
+
+.account-data-row { align-items: center; height: 38px; }
+.row-label {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text);
+    letter-spacing: .07em;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.card-divider { height: 1px; background: var(--line); margin: 9px 0; }
-
-/* Weekly bar row */
-.week-row { display: flex; align-items: center; gap: 9px; }
-.week-label {
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    color: var(--faint);
-    letter-spacing: .1em;
-    width: 44px;
-    flex-shrink: 0;
-}
-.week-bar {
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
+.row-bar {
+    height: 8px;
+    border-radius: 4px;
     background: var(--track);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.35);
     overflow: hidden;
 }
-.week-bar-fill {
+.row-bar-fill {
     height: 100%;
-    border-radius: 3px;
-    background: var(--ok);
+    border-radius: 4px;
     width: 0%;
     transition: width .6s ease, background .2s ease;
 }
-.week-bar-fill.warn   { background: var(--warn); }
-.week-bar-fill.limit  { background: var(--crit); }
-.week-pct {
+.session-fill { background: var(--session-grad); box-shadow: var(--session-glow); }
+.weekly-fill { background: var(--weekly-grad); box-shadow: var(--weekly-glow); }
+/* That row's own utilization crossed the danger threshold — override the hue. */
+.row-bar-fill.at-limit { background: var(--danger); box-shadow: none; }
+
+.row-pct {
     font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 700;
+    font-feature-settings: 'tnum';
     color: var(--text);
-}
-.week-reset {
     text-align: right;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--faint);
-    margin-top: 4px;
 }
 
-/* Reconnect button on an expired card */
-.account-card.expired .account-card-body { opacity: .5; }
+.row-ring { display: flex; align-items: center; justify-content: center; }
+.row-ring svg { transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--ring-track); stroke-width: 5; }
+.ring-fill {
+    fill: none;
+    stroke: var(--acc);
+    stroke-width: 5;
+    stroke-linecap: round;
+    stroke-dasharray: 81.7;
+    stroke-dashoffset: 81.7;
+    transition: stroke-dashoffset .6s ease, stroke .2s ease;
+}
+.weekly-row .ring-fill { opacity: .75; }
+/* Reset window ≥90% elapsed — imminent reset. */
+.ring-fill.imminent { stroke: var(--danger); }
+
+.row-resets-in {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+    text-align: right;
+    white-space: nowrap;
+}
+.row-resets-at {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.account-divider { height: 1px; background: var(--line); margin: 14px 0; }
+/* No trailing divider after the last account in the list. */
+#accountsContainer > .account-block:last-child .account-divider { display: none; }
+
+/* Responsive — the accounts container adapts columns to available width
+   instead of the window resizing to fit them (Chrome 120+ container queries). */
+@container accounts (max-width: 560px) {
+    .account-col-headers, .account-data-row {
+        grid-template-columns: minmax(110px,140px) 1fr 48px 40px 82px;
+    }
+    .col-resets-at, .row-resets-at { display: none; }
+}
+@container accounts (max-width: 500px) {
+    .account-col-headers, .account-data-row {
+        grid-template-columns: minmax(110px,140px) 1fr 48px 82px;
+    }
+    .col-elapsed, .row-ring { display: none; }
+}
+
+/* Reconnect button on an expired account block */
+.account-block.expired .account-col-headers,
+.account-block.expired .account-data-row { opacity: .5; }
 .account-reconnect-btn {
     position: relative;
-    margin-top: 10px;
+    margin-top: 4px;
+    margin-bottom: 10px;
     width: 100%;
-    background: var(--crit-chip-bg);
-    color: var(--crit-text);
-    border: 1px solid var(--crit-card-border);
+    background: var(--danger-soft);
+    color: var(--danger-text);
+    border: 1px solid var(--danger-border);
     border-radius: 10px;
     font-family: var(--font-ui);
     font-size: 11px;
@@ -654,22 +636,31 @@ body {
     height: 220px;
 }
 .graph-section canvas { width: 100% !important; height: 100% !important; }
-.graph-account-chips { display: none; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.graph-account-chip {
+/* Styled like the theme segmented control. */
+.graph-account-chips {
+    display: none;
+    gap: 4px;
+    margin-bottom: 10px;
     background: var(--chip);
     border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+}
+.graph-account-chip {
+    flex: 1;
+    background: transparent;
+    border: none;
     color: var(--muted);
     font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 20px;
+    padding: 5px 10px;
+    border-radius: 8px;
     cursor: pointer;
 }
 .graph-account-chip.active {
-    background: var(--accent-solid);
-    border-color: var(--accent-solid);
-    color: var(--accent-ink);
+    background: var(--acc);
+    color: #fff;
     font-weight: 600;
 }
 .graph-btn.active {
@@ -703,12 +694,12 @@ body {
 .settings-overlay {
     position: absolute;
     inset: 0;
-    background: linear-gradient(158deg, var(--bg), var(--bg2));
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
     -webkit-backdrop-filter: blur(28px);
     backdrop-filter: blur(28px);
     display: flex;
     flex-direction: column;
-    border-radius: 20px;
+    border-radius: 14px;
     overflow: hidden;
     z-index: 10;
 }
@@ -727,14 +718,15 @@ body {
 .settings-title { font-family: var(--font-ui); font-weight: 600; font-size: 16px; color: var(--text); }
 .done-settings-btn {
     -webkit-app-region: no-drag;
-    background: var(--accent-grad);
+    background: var(--acc);
     color: var(--accent-ink);
     border: none;
     font-family: var(--font-ui);
     font-weight: 600;
     font-size: 13px;
     padding: 6px 16px;
-    border-radius: 10px;
+    border-radius: 9px;
+    box-shadow: 0 0 10px var(--acc-glow);
     cursor: pointer;
 }
 
@@ -767,14 +759,15 @@ body {
     color: var(--faint);
 }
 .add-account-btn {
-    background: none;
-    border: none;
-    color: var(--accent-solid);
+    background: var(--acc-soft);
+    border: 1px solid var(--acc-border);
+    color: var(--acc);
     font-family: var(--font-ui);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    padding: 0;
+    padding: 5px 12px;
+    border-radius: 20px;
 }
 .add-account-btn:hover { filter: brightness(1.15); }
 
@@ -784,7 +777,7 @@ body {
     align-items: center;
     gap: 8px;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--surface-border);
     border-radius: 11px;
     padding: 8px 12px;
 }
@@ -800,41 +793,50 @@ body {
 }
 .account-label-input:focus { color: var(--accent-solid); }
 .account-remove-btn {
-    background: transparent;
-    border: none;
-    color: var(--crit-text);
+    background: var(--danger-soft);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
+    padding: 4px 10px;
+    border-radius: 20px;
+    flex-shrink: 0;
 }
-.account-remove-btn:hover { color: var(--crit); }
+.account-remove-btn:hover { filter: brightness(1.1); }
 
 .settings-divider { height: 1px; background: var(--line); }
 
-/* Theme picker (5 chips) */
-.theme-picker-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.theme-picker-head .settings-row-label { font-size: 13px; color: var(--text); font-weight: 500; }
-.theme-picker-name { font-family: var(--font-mono); font-size: 10px; color: var(--faint); }
-.theme-selector { display: flex; flex-wrap: wrap; gap: 8px; }
-.theme-btn {
+/* Theme segmented control (Dark / Light / System) */
+.theme-selector {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 12px;
+    gap: 4px;
+    margin-top: 8px;
+    background: var(--chip);
+    border: 1px solid var(--border);
     border-radius: 10px;
+    padding: 3px;
+}
+.theme-seg-btn {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
     cursor: pointer;
     font-family: var(--font-ui);
     font-size: 12.5px;
     font-weight: 500;
     color: var(--muted);
-    background: var(--chip);
-    border: 1px solid var(--border);
-    transition: background .18s ease, border-color .18s ease, color .18s ease;
+    transition: background .18s ease, color .18s ease;
 }
-.theme-btn-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-/* Selected chip gets the theme's own accent — set inline by app.js. */
-.theme-btn.active { font-weight: 700; }
+.theme-seg-btn.active {
+    background: var(--acc);
+    color: #fff;
+    font-weight: 700;
+}
 
 /* Toggles grid */
 .settings-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
@@ -843,29 +845,29 @@ body {
 .settings-col-disabled { opacity: .5; }
 .settings-row-hint { font-family: var(--font-mono); color: var(--faint); font-size: 9px; }
 
-/* Toggle switch (mockup: 38x22, knob 18) */
-.toggle-switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; cursor: pointer; }
+/* Toggle switch (mockup: 38x21 pill, 17px knob) */
+.toggle-switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; cursor: pointer; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-slider {
     position: absolute;
     inset: 0;
-    background: var(--track);
+    background: var(--toggle-off);
     border-radius: 12px;
-    transition: background .2s;
+    transition: background .2s, box-shadow .2s;
 }
 .toggle-slider::before {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     left: 2px;
     top: 2px;
-    background: var(--faint);
+    background: #fff;
     border-radius: 50%;
-    transition: transform .2s, background .2s;
+    transition: transform .2s;
 }
-.toggle-switch input:checked + .toggle-slider { background: var(--accent-solid); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); background: #fff; }
+.toggle-switch input:checked + .toggle-slider { background: var(--acc); box-shadow: 0 0 10px var(--acc-glow); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(17px); }
 .toggle-switch input:disabled + .toggle-slider { cursor: not-allowed; opacity: .5; }
 
 /* Selects (time / date / refresh) */
@@ -873,8 +875,8 @@ body {
 .select-field-label { font-size: 11px; color: var(--faint); margin-bottom: 6px; display: block; }
 .settings-select {
     width: 100%;
-    background: var(--chip);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
     border-radius: 9px;
     padding: 9px 12px;
     font-family: var(--font-ui);
@@ -898,8 +900,8 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: var(--chip);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
     border-radius: 9px;
     padding: 9px 10px;
 }
@@ -941,9 +943,9 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--chip);
-    border: 1px solid var(--accent-solid);
-    color: var(--accent-solid);
+    background: var(--coffee-soft);
+    border: 1px solid var(--coffee-border);
+    color: var(--coffee-text);
     padding: 9px 16px;
     border-radius: 11px;
     font-family: var(--font-ui);
@@ -961,5 +963,4 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 /* ── Animations ─────────────────────────────────────────────────────────── */
-@keyframes cu-pulse { 0%,100% { opacity: .9; transform: scale(1); } 50% { opacity: .4; transform: scale(1.4); } }
-@keyframes cu-glow { 0%,100% { opacity: .45; } 50% { opacity: .85; } }
+@keyframes cu-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }

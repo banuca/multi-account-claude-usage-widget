@@ -71,6 +71,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
 
+  // Theme system — 'system' follows the OS live via nativeTheme
+  getSystemPrefersDark: () => ipcRenderer.invoke('get-system-prefers-dark'),
+  onSystemThemeUpdated: (callback) => {
+    ipcRenderer.on('system-theme-updated', (event, prefersDark) => callback(prefersDark));
+  },
+
   // Updates
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

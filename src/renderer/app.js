@@ -30,65 +30,68 @@ let pendingValidation = null;         // { sessionKey, organizations } awaiting 
 const RELEASES_URL = 'https://github.com/banuca/multi-account-claude-usage-widget/releases/latest';
 
 // ── Theme system ─────────────────────────────────────────────────────────────
-// Five named themes. Values are copied verbatim from the redesign mockup's
-// `themes` object — the mockup is the source of truth for every neutral/accent.
-// Status colors (green/amber/red) are NOT here: they're fixed CSS constants so
-// the limit signal reads the same in every theme (see :root in styles.css).
+// Dark + Light, values copied verbatim from the "Slate" mockup's design token
+// table — the mockup is the source of truth for every value here. Accent,
+// warn/danger, session/weekly bar colors and the app logo gradient are
+// identical across both themes (only the neutrals invert), matching the old
+// system's rule that limit-signal colors read the same in every theme.
+const ACCENT_SOLID = '#8b7cf6';
+const ACCENT_SOFT = '#8b7cf626';
+const ACCENT_BORDER = '#8b7cf65c';
+const ACCENT_GLOW = '#8b7cf659';
+const WARN = '#e8a33d';
+const DANGER = '#e5484d';
+const DANGER_SOFT_BG = 'rgba(229,72,77,.12)';
+const DANGER_BORDER = 'rgba(229,72,77,.38)';
+const DANGER_TEXT = '#f2848b';
+const SESSION_GRAD = 'linear-gradient(90deg,#f2b25c,#e08a2e)';
+const SESSION_GLOW = '0 0 10px rgba(232,150,60,.35)';
+const WEEKLY_GRAD = 'linear-gradient(90deg,#5b8def,#3e6fd9)';
+const WEEKLY_GLOW = '0 0 10px rgba(80,130,230,.3)';
+const LOGO_GRAD = 'linear-gradient(140deg,#F09A52,#D96A3B)';
+const LOGO_SHADOW = '0 2px 8px rgba(217,106,59,.35)';
+const COFFEE_SOFT_BG = 'rgba(232,163,61,.08)';
+const COFFEE_BORDER = 'rgba(232,163,61,.4)';
+const COFFEE_TEXT = '#e8b04e';
+
 const THEMES = {
-    aurora: {
-        label: 'Aurora', dot: '#D97757',
-        bg: 'rgba(38,34,32,.85)', bg2: 'rgba(24,21,20,.92)',
-        surface: 'rgba(255,255,255,.035)', border: 'rgba(255,255,255,.07)', line: 'rgba(255,255,255,.06)',
-        text: '#f4efeb', muted: '#a9a19a', faint: '#7a726b',
-        accentGrad: 'linear-gradient(140deg,#e08663,#c25f42)', accentSolid: '#e08663', accentInk: '#fff',
-        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.09)', track: 'rgba(255,255,255,.08)',
-        shadow: '0 30px 60px -20px rgba(0,0,0,.6)'
+    dark: {
+        bg: '#232129', bg2: '#1c1b22',
+        border: 'rgba(255,255,255,.08)', line: 'rgba(255,255,255,.06)',
+        text: '#f2f0f5', muted: '#8d899b', faint: '#57536a',
+        surface: '#17161d', surfaceBorder: 'rgba(255,255,255,.08)',
+        chip: 'rgba(255,255,255,.06)', chipHover: 'rgba(255,255,255,.12)',
+        ringTrack: 'rgba(255,255,255,.09)', track: 'rgba(255,255,255,.09)', toggleOff: 'rgba(255,255,255,.12)',
+        titlebarBg: 'rgba(0,0,0,.14)', titlebarBorder: 'rgba(255,255,255,.055)',
+        shadow: '0 32px 70px -18px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05)',
+        accentInk: '#fff'
     },
-    midnight: {
-        label: 'Midnight', dot: '#6d9bff',
-        bg: 'rgba(26,29,43,.86)', bg2: 'rgba(17,19,30,.93)',
-        surface: 'rgba(255,255,255,.045)', border: 'rgba(255,255,255,.09)', line: 'rgba(255,255,255,.07)',
-        text: '#eef1f7', muted: '#9aa2b8', faint: '#69708a',
-        accentGrad: 'linear-gradient(140deg,#7ba6ff,#4a6fd8)', accentSolid: '#7ba6ff', accentInk: '#0d1220',
-        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.08)', track: 'rgba(255,255,255,.07)',
-        shadow: '0 30px 60px -20px rgba(6,9,26,.65)'
-    },
-    nebula: {
-        label: 'Nebula', dot: '#b47ffb',
-        bg: 'rgba(33,26,46,.86)', bg2: 'rgba(22,15,31,.93)',
-        surface: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.1)', line: 'rgba(255,255,255,.08)',
-        text: '#f2eef8', muted: '#a99cc0', faint: '#786a8c',
-        accentGrad: 'linear-gradient(140deg,#c08cff,#8a4fe0)', accentSolid: '#c08cff', accentInk: '#160f22',
-        chip: 'rgba(255,255,255,.05)', ringTrack: 'rgba(255,255,255,.08)', track: 'rgba(255,255,255,.07)',
-        shadow: '0 30px 60px -20px rgba(15,6,28,.7)'
-    },
-    terminal: {
-        label: 'Terminal', dot: '#7fdca4',
-        bg: '#0b0b0d', bg2: '#0b0b0d',
-        surface: '#111116', border: '#20202a', line: '#191920',
-        text: '#e6e6ea', muted: '#8a8a96', faint: '#565662',
-        accentGrad: 'linear-gradient(140deg,#8be6ad,#4fb07e)', accentSolid: '#7fdca4', accentInk: '#07130c',
-        chip: '#111116', ringTrack: 'rgba(255,255,255,.07)', track: '#20202a',
-        shadow: '0 30px 60px -20px rgba(0,0,0,.8)'
-    },
-    daylight: {
-        label: 'Daylight', dot: '#D97757',
+    light: {
         bg: '#fbf7f1', bg2: '#f1e9de',
-        surface: '#ffffff', border: '#efe4d6', line: '#efe5d7',
+        border: '#efe4d6', line: '#efe5d7',
         text: '#2b2622', muted: '#7c7062', faint: '#a89a8a',
-        accentGrad: 'linear-gradient(140deg,#e07a5a,#c96144)', accentSolid: '#c96144', accentInk: '#fff',
-        chip: '#f2ebe1', ringTrack: '#efe6da', track: '#efe6da',
-        shadow: '0 24px 50px -18px rgba(80,50,30,.28)'
+        surface: '#ffffff', surfaceBorder: '#efe4d6',
+        chip: '#f2ebe1', chipHover: '#e8ddd0',
+        ringTrack: '#efe6da', track: '#efe6da', toggleOff: '#e0d3c2',
+        titlebarBg: 'rgba(0,0,0,.04)', titlebarBorder: 'rgba(0,0,0,.06)',
+        shadow: '0 24px 50px -18px rgba(80,50,30,.28)',
+        accentInk: '#fff'
     }
 };
 
-// Map any stored theme value to a valid theme key. Legacy installs stored
-// 'dark' / 'light' / 'system' — fold those into the closest new theme so the
-// upgrade is seamless.
-function normalizeTheme(theme) {
-    if (THEMES[theme]) return theme;
-    if (theme === 'light') return 'daylight';
-    return 'aurora'; // dark / system / undefined
+// settings.theme is 'dark' | 'light' | 'system'. Legacy installs stored one of
+// the five old named themes — fold those into the closest new value.
+function normalizeThemeSetting(theme) {
+    if (theme === 'dark' || theme === 'light' || theme === 'system') return theme;
+    if (theme === 'daylight') return 'light';
+    return 'dark'; // aurora / midnight / nebula / terminal / undefined
+}
+
+// Whether the OS is currently in dark mode — only consulted when the setting
+// is 'system'. Populated at init and kept live via onSystemThemeUpdated.
+let systemPrefersDark = true;
+function resolveThemeKey(themeSetting) {
+    return themeSetting === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeSetting;
 }
 
 // Debug logging — only shows in DevTools (development mode).
@@ -139,7 +142,7 @@ const elements = {
     showTrayStatsToggle: document.getElementById('showTrayStatsToggle'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
-    themeBtns: document.querySelectorAll('.theme-btn'),
+    themeBtns: document.querySelectorAll('.theme-seg-btn'),
     timeFormat: document.getElementById('timeFormat'),
     weeklyDateFormat: document.getElementById('weeklyDateFormat'),
     refreshInterval: document.getElementById('refreshInterval'),
@@ -173,6 +176,7 @@ async function init() {
     // Apply saved theme and load thresholds immediately
     const settings = await window.electronAPI.getSettings();
     window._cachedSettings = settings;
+    systemPrefersDark = await window.electronAPI.getSystemPrefersDark();
     applyTheme(settings.theme);
     if (window.electronAPI.platform === 'darwin') {
         document.getElementById('trayLabel').textContent = 'Hide from Dock';
@@ -296,16 +300,22 @@ function setupEventListeners() {
         window.electronAPI.openExternal('https://buymeacoffee.com/banuca');
     });
 
-    // Theme chips — apply live and persist immediately so the choice survives
-    // even if the user closes the panel without pressing Done.
+    // Theme segmented control (Dark/Light/System) — apply live and persist
+    // immediately so the choice survives even without pressing Done.
     elements.themeBtns.forEach(btn => {
         btn.addEventListener('click', async () => {
             applyTheme(btn.dataset.theme);
             const settings = window._cachedSettings || await window.electronAPI.getSettings();
-            settings.theme = currentTheme;
+            settings.theme = currentThemeSetting;
             window._cachedSettings = settings;
             await window.electronAPI.saveSettings(settings);
         });
+    });
+
+    // 'System' follows the OS live — only matters while that's the active setting.
+    window.electronAPI.onSystemThemeUpdated((prefersDark) => {
+        systemPrefersDark = prefersDark;
+        if (currentThemeSetting === 'system') applyTheme('system');
     });
 
     // Prevent accidental app hiding: couple Hide-from-Taskbar and Show-Tray-Stats
@@ -671,46 +681,52 @@ function renderAccounts() {
 // Clone the template for one account and cache its scoped elements.
 function renderAccountCard(account) {
     const fragment = elements.accountCardTemplate.content.cloneNode(true);
-    const card = fragment.querySelector('.account-card');
+    const card = fragment.querySelector('.account-block');
     card.dataset.accountId = account.id;
 
     const els = {
-        label: card.querySelector('.account-label'),
+        name: card.querySelector('.account-name'),
+        badge: card.querySelector('.account-badge'),
         reconnectBtn: card.querySelector('.account-reconnect-btn'),
+        sessionFill: card.querySelector('.session-fill'),
+        sessionPct: card.querySelector('.session-pct'),
         sessionRing: card.querySelector('.session-ring'),
-        sessionPercentage: card.querySelector('.session-percentage'),
+        sessionResetsIn: card.querySelector('.session-resets-in'),
         sessionResetsAt: card.querySelector('.session-resets-at'),
-        statusText: card.querySelector('.status-text'),
-        weeklyFill: card.querySelector('.weekly-progress'),
-        weeklyPercentage: card.querySelector('.weekly-percentage'),
+        weeklyFill: card.querySelector('.weekly-fill'),
+        weeklyPct: card.querySelector('.weekly-pct'),
+        weeklyRing: card.querySelector('.weekly-ring'),
+        weeklyResetsIn: card.querySelector('.weekly-resets-in'),
         weeklyResetsAt: card.querySelector('.weekly-resets-at')
     };
 
-    els.label.textContent = account.label;
+    els.name.textContent = account.label;
     els.reconnectBtn.addEventListener('click', () => reconnectAccount(account.id));
 
     elements.accountsContainer.appendChild(card);
     cardsById.set(account.id, { card, els });
 }
 
-// Gauge geometry — r=34 ⇒ circumference 2π·34 ≈ 213.6 (matches the mockup's
-// stroke-dasharray). Offset shrinks as utilization grows (100% ⇒ offset 0).
-const GAUGE_CIRCUMFERENCE = 213.6;
-
-// Fixed status thresholds → one of 'healthy' | 'warn' | 'limit'.
-// warn/danger come from the user's settings (same values the old bars used).
-function statusFor(pct) {
-    if (pct >= dangerThreshold) return 'limit';
-    if (pct >= warnThreshold) return 'warn';
-    return 'healthy';
+// Elapsed-ring geometry — r=13 ⇒ circumference 2π·13 ≈ 81.7 (matches the
+// mockup's stroke-dasharray). Fill = fraction of the reset window elapsed
+// (session window 5h, weekly 7d); red at ≥90% elapsed (imminent reset). No
+// resets_at (session never started) ⇒ treated as 0% elapsed.
+const RING_CIRCUMFERENCE = 81.7;
+const SESSION_WINDOW_MS = 5 * 60 * 60 * 1000;
+const WEEKLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+function elapsedFraction(resetsAt, windowMs) {
+    if (!resetsAt) return 0;
+    const remainingMs = new Date(resetsAt) - new Date();
+    return Math.min(Math.max((windowMs - remainingMs) / windowMs, 0), 1);
 }
-const STATUS_RANK = { healthy: 0, warn: 1, limit: 2 };
-const STATUS_LABEL = { healthy: 'HEALTHY', warn: 'WARN', limit: 'AT LIMIT' };
-function worstStatus(a, b) { return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b; }
+function updateRing(ringEl, elapsed) {
+    ringEl.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - elapsed);
+    ringEl.classList.toggle('imminent', elapsed >= 0.9);
+}
 
 // "6d 7h" / "4h 11m" / "1m" — remaining time until a reset (mockup style).
 function formatRemaining(resetsAt) {
-    if (!resetsAt) return '';
+    if (!resetsAt) return '—';
     const diff = new Date(resetsAt) - new Date();
     if (diff <= 0) return 'now';
     const totalMinutes = Math.floor(diff / 60000);
@@ -722,14 +738,28 @@ function formatRemaining(resetsAt) {
     return `${minutes}m`;
 }
 
-// Update one card: circular session gauge, status chip, session-reset line,
-// weekly bar + weekly-reset line. Status colors are fixed; the card's overall
-// status (worst of session/weekly) drives the ring, chip and at-limit tint,
-// while the weekly bar is colored by its own utilization.
+// Show the "closest to limit" badge only on the worst account (by
+// max(session, weekly), see computeWorstAccountId below), and only once
+// there are ≥2 accounts and that max has crossed the warn threshold.
+function refreshWorstAccountBadge() {
+    const worstId = computeWorstAccountId();
+    for (const account of accounts) {
+        const entry = cardsById.get(account.id);
+        if (!entry) continue;
+        const data = usageByAccount[account.id];
+        const maxPct = data ? Math.max(data.five_hour?.utilization || 0, data.seven_day?.utilization || 0) : 0;
+        const showBadge = accounts.length >= 2 && account.id === worstId && maxPct >= warnThreshold;
+        entry.els.badge.style.display = showBadge ? 'flex' : 'none';
+    }
+}
+
+// Update one account block: session/weekly bars (fixed hue, swap to danger
+// red past that row's own threshold), % readouts, elapsed rings, and the
+// resets-in/resets-at columns.
 function updateAccountCard(accountId, data) {
     const entry = cardsById.get(accountId);
     if (!entry) return;
-    const { card, els } = entry;
+    const { els } = entry;
     const settings = window._cachedSettings || {};
     const timeFormat = settings.timeFormat || '12h';
     const weeklyDateFormat = settings.weeklyDateFormat || 'date';
@@ -739,42 +769,26 @@ function updateAccountCard(accountId, data) {
     const weeklyUtil = Math.min(Math.max(data?.seven_day?.utilization || 0, 0), 100);
     const weeklyResetsAt = data?.seven_day?.resets_at;
 
-    // Session gauge
-    els.sessionPercentage.textContent = Math.round(sessionUtil);
-    els.sessionRing.style.strokeDashoffset = GAUGE_CIRCUMFERENCE * (1 - sessionUtil / 100);
+    els.sessionFill.style.width = `${sessionUtil}%`;
+    els.sessionFill.classList.toggle('at-limit', sessionUtil >= dangerThreshold);
+    els.sessionPct.textContent = `${Math.round(sessionUtil)}%`;
+    updateRing(els.sessionRing, elapsedFraction(sessionResetsAt, SESSION_WINDOW_MS));
+    els.sessionResetsIn.textContent = formatRemaining(sessionResetsAt);
+    els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
 
-    // Statuses
-    const sessionStatus = statusFor(sessionUtil);
-    const weeklyStatus = statusFor(weeklyUtil);
-    const overall = worstStatus(sessionStatus, weeklyStatus);
-    card.classList.remove('status-healthy', 'status-warn', 'status-limit');
-    card.classList.add('status-' + overall);
-    els.statusText.textContent = STATUS_LABEL[overall];
-
-    // Session reset line: "1m · 4:20 PM"
-    if (sessionResetsAt) {
-        els.sessionResetsAt.textContent = `${formatRemaining(sessionResetsAt)} · ${formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat)}`;
-    } else {
-        els.sessionResetsAt.textContent = '—';
-    }
-
-    // Weekly bar + reset line: "6d 7h left · Jul 9"
     els.weeklyFill.style.width = `${weeklyUtil}%`;
-    els.weeklyFill.classList.remove('warn', 'limit');
-    if (weeklyStatus === 'limit') els.weeklyFill.classList.add('limit');
-    else if (weeklyStatus === 'warn') els.weeklyFill.classList.add('warn');
-    els.weeklyPercentage.textContent = `${Math.round(weeklyUtil)}%`;
-    if (weeklyResetsAt) {
-        els.weeklyResetsAt.textContent = `${formatRemaining(weeklyResetsAt)} left · ${formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat)}`;
-    } else {
-        els.weeklyResetsAt.textContent = '—';
-    }
+    els.weeklyFill.classList.toggle('at-limit', weeklyUtil >= dangerThreshold);
+    els.weeklyPct.textContent = `${Math.round(weeklyUtil)}%`;
+    updateRing(els.weeklyRing, elapsedFraction(weeklyResetsAt, WEEKLY_WINDOW_MS));
+    els.weeklyResetsIn.textContent = formatRemaining(weeklyResetsAt);
+    els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
 
+    refreshWorstAccountBadge();
     updateWidgetFooter();
 }
 
-// Recompute the reset lines for every card (called on an interval so the
-// "remaining" countdowns stay fresh between polls).
+// Recompute the elapsed rings + resets-in/resets-at columns for every card
+// (called on an interval so countdowns and ring fills stay fresh between polls).
 function refreshAllCardTimers() {
     const settings = window._cachedSettings || {};
     const timeFormat = settings.timeFormat || '12h';
@@ -787,12 +801,14 @@ function refreshAllCardTimers() {
         const { els } = entry;
         const sessionResetsAt = data?.five_hour?.resets_at;
         const weeklyResetsAt = data?.seven_day?.resets_at;
-        els.sessionResetsAt.textContent = sessionResetsAt
-            ? `${formatRemaining(sessionResetsAt)} · ${formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat)}`
-            : '—';
-        els.weeklyResetsAt.textContent = weeklyResetsAt
-            ? `${formatRemaining(weeklyResetsAt)} left · ${formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat)}`
-            : '—';
+
+        updateRing(els.sessionRing, elapsedFraction(sessionResetsAt, SESSION_WINDOW_MS));
+        els.sessionResetsIn.textContent = formatRemaining(sessionResetsAt);
+        els.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
+
+        updateRing(els.weeklyRing, elapsedFraction(weeklyResetsAt, WEEKLY_WINDOW_MS));
+        els.weeklyResetsIn.textContent = formatRemaining(weeklyResetsAt);
+        els.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
     }
 }
 
@@ -889,6 +905,7 @@ async function removeAccountFromUI(accountId) {
         startAddAccount({ fromSettings: false });
     } else {
         updateWidgetFooter();
+        refreshWorstAccountBadge();
         if (selectedGraphAccountId === accountId) selectedGraphAccountId = null;
         if (graphVisible) await loadChart();
     }
@@ -1414,7 +1431,7 @@ function renderChart(history) {
         {
             label: 'Session',
             data: history.map((entry) => ({ x: entry.timestamp, y: entry.session })),
-            borderColor: '#8b5cf6',
+            borderColor: '#e08a2e',
             backgroundColor: 'transparent',
             borderWidth: 2,
             stepped: true,
@@ -1425,7 +1442,7 @@ function renderChart(history) {
         {
             label: 'Weekly',
             data: history.map((entry) => ({ x: entry.timestamp, y: entry.weekly })),
-            borderColor: '#3b82f6',
+            borderColor: '#3e6fd9',
             backgroundColor: 'transparent',
             borderWidth: 2,
             stepped: true,
@@ -1467,9 +1484,8 @@ function renderChart(history) {
                     ticks: {
                         maxRotation: 0,
                         minRotation: 0,
-                        font: {
-                            size: 10
-                        },
+                        font: { family: 'Geist Mono', size: 9.5 },
+                        color: '#57536a',
                         callback(value) {
                             const tf = (window._cachedSettings || {}).timeFormat || '12h';
                             const spanMs = history.length > 1
@@ -1486,13 +1502,12 @@ function renderChart(history) {
                     min: 0,
                     max: yMax,
                     ticks: {
-                        font: {
-                            size: 10
-                        },
+                        font: { family: 'Geist Mono', size: 9.5 },
+                        color: '#57536a',
                         callback: (value) => `${value}%`
                     },
                     grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
+                        color: 'rgba(255,255,255,.06)'
                     }
                 }
             },
@@ -1501,6 +1516,9 @@ function renderChart(history) {
                     display: false
                 },
                 tooltip: {
+                    backgroundColor: '#17161d',
+                    titleFont: { family: 'Geist Mono' },
+                    bodyFont: { family: 'Geist Mono' },
                     callbacks: {
                         title(items) {
                             return new Date(items[0].parsed.x).toLocaleString([], {
@@ -1604,7 +1622,7 @@ async function saveSettings() {
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,
-        theme: currentTheme,
+        theme: currentThemeSetting,
         warnThreshold: warn,
         dangerThreshold: danger,
         timeFormat: elements.timeFormat.value || '12h',
@@ -1629,60 +1647,44 @@ async function saveSettings() {
     startAutoUpdate();
 }
 
-// Apply a theme live: write its neutrals/accent onto the CSS custom properties
-// that every component reads, and refresh the settings theme-picker chips.
-// No restart needed — the browser recalculates all var() references instantly.
-let currentTheme = 'aurora';
+// Apply the theme setting live: resolve 'system' to dark/light via the OS,
+// write the resolved theme's neutrals onto the CSS custom properties every
+// component reads, and refresh the segmented Dark/Light/System control. No
+// restart needed — the browser recalculates all var() references instantly.
+// Accent/warn/danger/session/weekly/logo tokens are theme-invariant — they're
+// static values in styles.css, never touched here.
+let currentThemeSetting = 'dark'; // the raw setting: 'dark' | 'light' | 'system'
 function applyTheme(theme) {
-    const key = normalizeTheme(theme);
-    currentTheme = key;
-    const t = THEMES[key];
+    currentThemeSetting = normalizeThemeSetting(theme);
+    const t = THEMES[resolveThemeKey(currentThemeSetting)];
     const root = document.documentElement.style;
 
     root.setProperty('--bg', t.bg);
     root.setProperty('--bg2', t.bg2);
-    root.setProperty('--surface', t.surface);
     root.setProperty('--border', t.border);
     root.setProperty('--line', t.line);
     root.setProperty('--text', t.text);
     root.setProperty('--muted', t.muted);
     root.setProperty('--faint', t.faint);
-    root.setProperty('--accent-grad', t.accentGrad);
-    root.setProperty('--accent-solid', t.accentSolid);
-    root.setProperty('--accent-ink', t.accentInk);
+    root.setProperty('--surface', t.surface);
+    root.setProperty('--surface-border', t.surfaceBorder);
     root.setProperty('--chip', t.chip);
+    root.setProperty('--chip-hover', t.chipHover);
     root.setProperty('--ring-track', t.ringTrack);
     root.setProperty('--track', t.track);
+    root.setProperty('--toggle-off', t.toggleOff);
+    root.setProperty('--titlebar-bg', t.titlebarBg);
+    root.setProperty('--titlebar-border', t.titlebarBorder);
     root.setProperty('--shadow', t.shadow);
+    root.setProperty('--accent-ink', t.accentInk);
 
     renderThemePicker();
 }
 
-// Reflect the current theme in the settings picker: the selected chip takes its
-// own theme's accent (bg/border/ink + bold); others use neutral chip styling
-// with their theme's signature dot color. Mirrors the mockup's picker exactly.
+// The segmented Dark/Light/System control — active option gets the accent fill.
 function renderThemePicker() {
-    const nameEl = document.getElementById('themePickerName');
-    if (nameEl) nameEl.textContent = THEMES[currentTheme].label;
-
-    document.querySelectorAll('#themeSelector .theme-btn').forEach(btn => {
-        const key = btn.dataset.theme;
-        const th = THEMES[key];
-        if (!th) return;
-        const on = key === currentTheme;
-        const dot = btn.querySelector('.theme-btn-dot');
-        btn.classList.toggle('active', on);
-        if (on) {
-            btn.style.background = th.accentSolid;
-            btn.style.borderColor = th.accentSolid;
-            btn.style.color = th.accentInk;
-            if (dot) dot.style.background = th.accentInk;
-        } else {
-            btn.style.background = '';
-            btn.style.borderColor = '';
-            btn.style.color = '';
-            if (dot) dot.style.background = th.dot;
-        }
+    document.querySelectorAll('#themeSelector .theme-seg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === currentThemeSetting);
     });
 }
 

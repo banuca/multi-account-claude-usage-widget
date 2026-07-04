@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, nativeTheme } = require('electron');
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
@@ -1223,13 +1223,22 @@ ipcMain.on('show-notification', (event, { title, body }) => {
   }
 });
 
+// Theme system: settings.theme is 'dark' | 'light' | 'system'. 'system' follows
+// the OS live via nativeTheme; the renderer re-applies tokens on every change.
+ipcMain.handle('get-system-prefers-dark', () => nativeTheme.shouldUseDarkColors);
+nativeTheme.on('updated', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('system-theme-updated', nativeTheme.shouldUseDarkColors);
+  }
+});
+
 // Settings handlers
 ipcMain.handle('get-settings', () => {
   return {
     autoStart: store.get('settings.autoStart', false),
     minimizeToTray: store.get('settings.minimizeToTray', false),
     alwaysOnTop: store.get('settings.alwaysOnTop', true),
-    theme: store.get('settings.theme', 'aurora'),
+    theme: store.get('settings.theme', 'dark'),
     warnThreshold: store.get('settings.warnThreshold', 75),
     dangerThreshold: store.get('settings.dangerThreshold', 90),
     timeFormat: store.get('settings.timeFormat', '12h'),
