@@ -69,7 +69,7 @@ const HISTORY_RETENTION_DAYS = 8;
 const CHART_DAYS = 7;
 const MAX_HISTORY_SAMPLES = 10000; // Cap total samples to prevent unbounded growth
 
-function storeUsageHistory(data) {
+function storeUsageHistory(accountId, data) {
   // Skip write if the session is invalid — a live session always has resets_at timestamps.
   // Absent timestamps mean the API returned empty/zeroed data (dead session, removed device, etc.)
   if (!data.five_hour?.resets_at && !data.seven_day?.resets_at) {
@@ -77,8 +77,7 @@ function storeUsageHistory(data) {
     return;
   }
 
-  const organizationId = store.get('organizationId');
-  const historyKey = organizationId ? `usageHistory_${organizationId}` : 'usageHistory';
+  const historyKey = `usageHistory_acct_${accountId}`;
 
   const timestamp = Date.now();
   let history = store.get(historyKey, []);
@@ -86,13 +85,7 @@ function storeUsageHistory(data) {
   history.push({
     timestamp,
     session: data.five_hour?.utilization || 0,
-    weekly: data.seven_day?.utilization || 0,
-    sonnet: data.seven_day_sonnet?.utilization || 0,
-    opus: data.seven_day_opus?.utilization || 0,
-    cowork: data.seven_day_cowork?.utilization || 0,
-    design: data.seven_day_omelette?.utilization || 0,
-    oauthApps: data.seven_day_oauth_apps?.utilization || 0,
-    extraUsage: data.extra_usage?.utilization || 0
+    weekly: data.seven_day?.utilization || 0
   });
 
   // Rotation: apply both time-based and count-based limits
@@ -121,8 +114,31 @@ function migrateUsageHistoryKey() {
   }
 }
 
-// Prune all per-org history keys at startup. Trims entries older than the retention
-// window and deletes the key entirely if nothing remains — cleans up abandoned accounts.
+// One-time migration: rename any pre-multi-account `usageHistory_<orgId>` key to the
+// namespaced `usageHistory_acct_<accountId>` key, for whichever account now owns that
+// orgId. Keys with no matching account (orphaned orgs) are left for pruneStaleHistoryKeys
+// to age out. Must run after migrateLegacyAccount() so accounts[] is populated.
+function migrateUsageHistoryKeysToAccounts() {
+  const accounts = getAccounts();
+  const allKeys = Object.keys(store.store);
+  for (const key of allKeys) {
+    if (!key.startsWith('usageHistory_') || key.startsWith('usageHistory_acct_')) continue;
+    const orgId = key.slice('usageHistory_'.length);
+    const account = accounts.find((a) => a.orgId === orgId);
+    if (!account) continue; // no matching account — leave for pruneStaleHistoryKeys
+
+    const newKey = `usageHistory_acct_${account.id}`;
+    if (!store.has(newKey)) {
+      store.set(newKey, store.get(key));
+    }
+    store.delete(key);
+    debugLog('[History] Migrated', key, '→', newKey);
+  }
+}
+
+// Prune all history keys (old `usageHistory_<orgId>` and new `usageHistory_acct_<id>`
+// forms) at startup. Trims entries older than the retention window and deletes the key
+// entirely if nothing remains — cleans up abandoned accounts and orphaned orgs.
 function pruneStaleHistoryKeys() {
   const cutoff = Date.now() - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const allKeys = Object.keys(store.store);
@@ -1128,9 +1144,8 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
 
-ipcMain.handle('get-usage-history', () => {
-  const organizationId = store.get('organizationId');
-  const historyKey = organizationId ? `usageHistory_${organizationId}` : 'usageHistory';
+ipcMain.handle('get-usage-history', (event, accountId) => {
+  const historyKey = `usageHistory_acct_${accountId}`;
   const history = store.get(historyKey, []);
   const cutoff = Date.now() - (CHART_DAYS * 24 * 60 * 60 * 1000);
   return history
@@ -1448,6 +1463,7 @@ ipcMain.handle('fetch-usage-data', async (event, accountId) => {
   }
 
   latestUsageByAccount[accountId] = data;
+  storeUsageHistory(accountId, data);
   updateTrayRollup();
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
@@ -1465,13 +1481,19 @@ ipcMain.handle('fetch-usage-data', async (event, accountId) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
-  // History housekeeping runs first (still keyed off any legacy organizationId).
+  // History housekeeping: fold the single-key legacy history into the per-org key
+  // (still keyed off any legacy organizationId, before migrateLegacyAccount deletes it).
   migrateUsageHistoryKey();
-  pruneStaleHistoryKeys();
 
   // Fold any legacy single-account config into accounts[0], then restore each
   // account's sessionKey cookie onto its own partition.
   migrateLegacyAccount();
+
+  // Now that accounts[] is populated, rename any per-org history key to the
+  // per-account key, then prune whatever's left (stale/orphaned or aged-out).
+  migrateUsageHistoryKeysToAccounts();
+  pruneStaleHistoryKeys();
+
   for (const account of getAccounts()) {
     const key = loadAccountKey(account.id);
     if (key) {
@@ -1510,9 +1532,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    // Keep running in tray
-  }
+  // Keep running in tray — but only if a tray icon actually exists to restore
+  // from. With showTrayStats off there is no tray, so an OS-level window close
+  // (Alt+F4, WM close) would otherwise leave a headless process with no way
+  // to reopen it.
+  const hasTray = sessionTray && !sessionTray.isDestroyed();
+  if (!hasTray) app.quit();
 });
 
 app.on('activate', () => {

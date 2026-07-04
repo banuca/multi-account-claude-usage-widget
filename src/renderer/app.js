@@ -199,6 +199,15 @@ async function init() {
         showMainContent();
         await pollAllAccounts();
         startAutoUpdate();
+
+        // Restore the graph panel's visibility from the last session.
+        if (settings.graphVisible) {
+            graphVisible = true;
+            elements.graphBtn.classList.add('active');
+            elements.graphSection.style.display = 'block';
+            await loadChart();
+            resizeWidget();
+        }
     } else {
         // First run — no accounts yet. Open the add-account flow.
         startAddAccount({ fromSettings: false });
@@ -266,6 +275,15 @@ function setupEventListeners() {
         elements.refreshBtn.classList.add('spinning');
         await pollAllAccounts();
         elements.refreshBtn.classList.remove('spinning');
+    });
+
+    elements.graphBtn.addEventListener('click', async () => {
+        graphVisible = !graphVisible;
+        elements.graphBtn.classList.toggle('active', graphVisible);
+        elements.graphSection.style.display = graphVisible ? 'block' : 'none';
+        if (graphVisible) await loadChart();
+        resizeWidget();
+        _saveViewState();
     });
 
     elements.minimizeBtn.addEventListener('click', () => {
@@ -526,6 +544,7 @@ async function pollAllAccounts() {
     for (const account of accounts) {
         await fetchAccount(account.id);
     }
+    if (graphVisible) await loadChart();
 }
 
 async function fetchAccount(accountId) {
@@ -539,6 +558,8 @@ async function fetchAccount(accountId) {
         usageByAccount[accountId] = data;
         clearAccountExpired(accountId);
         updateAccountCard(accountId, data);
+        const account = accounts.find((a) => a.id === accountId);
+        if (account) checkUsageAlerts(account, data);
     } catch (error) {
         console.error(`Error fetching usage for ${accountId}:`, error);
         if (String(error.message).includes('SessionExpired') || String(error.message).includes('Unauthorized')) {
@@ -780,6 +801,7 @@ async function removeAccountFromUI(accountId) {
     await window.electronAPI.removeAccount(accountId);
     accounts = accounts.filter(a => a.id !== accountId);
     delete usageByAccount[accountId];
+    delete alertFiredByAccount[accountId];
     expiredAccounts.delete(accountId);
     const entry = cardsById.get(accountId);
     if (entry) { entry.card.remove(); cardsById.delete(accountId); }
@@ -790,6 +812,8 @@ async function removeAccountFromUI(accountId) {
     } else {
         updateWidgetFooter();
         resizeWidget();
+        if (selectedGraphAccountId === accountId) selectedGraphAccountId = null;
+        if (graphVisible) await loadChart();
     }
 }
 
@@ -1038,10 +1062,12 @@ function normalizeUsageData(data) {
 
 // Fire OS desktop notifications when usage crosses warn/danger thresholds.
 // Only fires once per threshold crossing per session window — not on every refresh.
-function checkUsageAlerts(data) {
+// Flags are keyed per account id so multiple accounts don't suppress each other's alerts.
+function checkUsageAlerts(account, data) {
     const settings = window._cachedSettings || {};
     if (!settings.usageAlerts) return;
 
+    const alertFired = getAlertFlags(account.id);
     const sessionPct = data.five_hour?.utilization || 0;
     const weeklyPct = data.seven_day?.utilization || 0;
 
@@ -1060,15 +1086,15 @@ function checkUsageAlerts(data) {
         alertFired.session_danger = true;
         alertFired.session_warn = true; // suppress warn if we jumped straight to danger
         window.electronAPI.showNotification(
-            'Claude Usage Widget',
-            `Current Session usage is at ${Math.round(sessionPct)}% — running low`
+            `${account.label} — session at ${Math.round(sessionPct)}%`,
+            'Current Session usage is running low'
         );
     // Current Session — warn threshold
     } else if (sessionPct >= warnThreshold && !alertFired.session_warn) {
         alertFired.session_warn = true;
         window.electronAPI.showNotification(
-            'Claude Usage Widget',
-            `Current Session usage has reached ${Math.round(sessionPct)}%`
+            `${account.label} — session at ${Math.round(sessionPct)}%`,
+            'Current Session usage has reached the warning threshold'
         );
     }
 
@@ -1077,15 +1103,15 @@ function checkUsageAlerts(data) {
         alertFired.weekly_danger = true;
         alertFired.weekly_warn = true;
         window.electronAPI.showNotification(
-            'Claude Usage Widget',
-            `Weekly Limit usage is at ${Math.round(weeklyPct)}% — running low`
+            `${account.label} — weekly at ${Math.round(weeklyPct)}%`,
+            'Weekly Limit usage is running low'
         );
     // Weekly Limit — warn threshold
     } else if (weeklyPct >= warnThreshold && !alertFired.weekly_warn) {
         alertFired.weekly_warn = true;
         window.electronAPI.showNotification(
-            'Claude Usage Widget',
-            `Weekly Limit usage has reached ${Math.round(weeklyPct)}%`
+            `${account.label} — weekly at ${Math.round(weeklyPct)}%`,
+            'Weekly Limit usage has reached the warning threshold'
         );
     }
 }
@@ -1196,41 +1222,20 @@ async function _saveViewState() {
     }, 300);
 }
 
-let sessionResetTriggered = false;
-let weeklyResetTriggered = false;
-let isFirstDataLoad = true; // used to seed alert flags on startup
-
-// Track which usage alert thresholds have already fired this window
-// Prevents repeat notifications on every refresh cycle
-// Keys: 'session_warn', 'session_danger', 'weekly_warn', 'weekly_danger'
-// Seeded on startup so thresholds already exceeded at launch don't fire immediately
-const alertFired = {
-    session_warn: false,
-    session_danger: false,
-    weekly_warn: false,
-    weekly_danger: false
-};
-
-// Seed alertFired flags based on current utilization at startup.
-// Any threshold already exceeded when the app launches is treated as already fired,
-// so the user doesn't get a notification for something they can already see.
-function seedAlertFlags(data) {
-    const sessionPct = data.five_hour?.utilization || 0;
-    const weeklyPct = data.seven_day?.utilization || 0;
-
-    if (sessionPct >= dangerThreshold) {
-        alertFired.session_danger = true;
-        alertFired.session_warn = true;
-    } else if (sessionPct >= warnThreshold) {
-        alertFired.session_warn = true;
+// Per-account usage alert flags — which thresholds have already fired for that
+// account's current session/weekly window. Prevents repeat notifications on every
+// refresh cycle; reset when utilization drops back below the warn threshold.
+const alertFiredByAccount = {}; // accountId -> { session_warn, session_danger, weekly_warn, weekly_danger }
+function getAlertFlags(accountId) {
+    if (!alertFiredByAccount[accountId]) {
+        alertFiredByAccount[accountId] = {
+            session_warn: false,
+            session_danger: false,
+            weekly_warn: false,
+            weekly_danger: false
+        };
     }
-
-    if (weeklyPct >= dangerThreshold) {
-        alertFired.weekly_danger = true;
-        alertFired.weekly_warn = true;
-    } else if (weeklyPct >= warnThreshold) {
-        alertFired.weekly_warn = true;
-    }
+    return alertFiredByAccount[accountId];
 }
 
 function startCountdown() {
@@ -1356,9 +1361,10 @@ function showMainContent() {
     elements.loginContainer.style.display = 'none';
     elements.noUsageContainer.style.display = 'none';
     elements.mainContent.style.display = 'block';
-    // Restore header buttons after the add-account flow (graph stays hidden in v1)
+    // Restore header buttons after the add-account flow
     elements.settingsBtn.style.display = 'flex';
     elements.refreshBtn.style.display = 'flex';
+    elements.graphBtn.style.display = 'flex';
     startCountdown();
     resizeWidget();
 }
@@ -1382,31 +1388,69 @@ function stopAutoUpdate() {
     }
 }
 
+// Which account's history the graph is currently showing. Defaults to the
+// worst account (matches the tray rollup logic in src/account-logic.js — the
+// renderer can't require() that Node module directly, so this is a small
+// duplicate of computeWorstAccount() scoped to just the id).
+let selectedGraphAccountId = null;
+function computeWorstAccountId() {
+    let worstId = null;
+    let worstVal = -1;
+    for (const account of accounts) {
+        const data = usageByAccount[account.id];
+        if (!data) continue;
+        const maxPct = Math.max(data.five_hour?.utilization || 0, data.seven_day?.utilization || 0);
+        if (maxPct > worstVal) {
+            worstVal = maxPct;
+            worstId = account.id;
+        }
+    }
+    return worstId;
+}
+
+// One chip per account above the chart; only shown once there's more than one
+// account to choose between. Clicking a chip reloads the chart for that account.
+function renderGraphChips() {
+    const container = document.getElementById('graphAccountChips');
+    if (!container) return;
+    container.innerHTML = '';
+    if (accounts.length < 2) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'flex';
+    for (const account of accounts) {
+        const chip = document.createElement('button');
+        chip.className = 'graph-account-chip';
+        chip.textContent = account.label;
+        chip.classList.toggle('active', account.id === selectedGraphAccountId);
+        chip.addEventListener('click', async () => {
+            selectedGraphAccountId = account.id;
+            await loadChart();
+        });
+        container.appendChild(chip);
+    }
+}
+
 async function loadChart() {
-    const history = await window.electronAPI.getUsageHistory();
-    if (!history.length) return;
+    if (!accounts.length) return;
+    if (!selectedGraphAccountId || !accounts.some((a) => a.id === selectedGraphAccountId)) {
+        selectedGraphAccountId = computeWorstAccountId() || accounts[0].id;
+    }
+    renderGraphChips();
+
+    const history = await window.electronAPI.getUsageHistory(selectedGraphAccountId);
+    if (!history.length) {
+        if (usageChart) { usageChart.destroy(); usageChart = null; }
+        return;
+    }
     renderChart(history);
 }
 
 function renderChart(history) {
     if (usageChart) usageChart.destroy();
 
-    const showSonnet = isExpanded && !!latestUsageData?.seven_day_sonnet;
-    const showOpus = isExpanded && !!latestUsageData?.seven_day_opus;
-    const showCowork = isExpanded && !!latestUsageData?.seven_day_cowork;
-    const showDesign = isExpanded && !!latestUsageData?.seven_day_omelette;
-    const showOAuthApps = isExpanded && !!latestUsageData?.seven_day_oauth_apps;
-    const showExtraUsage = isExpanded && !!latestUsageData?.extra_usage;
-    const allValues = history.flatMap((entry) => {
-        const values = [entry.session, entry.weekly];
-        if (showSonnet) values.push(entry.sonnet || 0);
-        if (showOpus) values.push(entry.opus || 0);
-        if (showCowork) values.push(entry.cowork || 0);
-        if (showDesign) values.push(entry.design || 0);
-        if (showOAuthApps) values.push(entry.oauthApps || 0);
-        if (showExtraUsage) values.push(entry.extraUsage || 0);
-        return values;
-    });
+    const allValues = history.flatMap((entry) => [entry.session, entry.weekly]);
     const yMax = Math.max(10, Math.ceil(Math.max(...allValues) / 10) * 10);
 
     const datasets = [
@@ -1433,108 +1477,6 @@ function renderChart(history) {
             pointHitRadius: 10
         }
     ];
-
-    if (showSonnet) {
-        const sonnetData = history.map((entry) => entry.sonnet || 0);
-        if (sonnetData.some((value) => value > 0)) {
-            datasets.push({
-                label: 'Sonnet',
-                data: history.map((entry) => ({ x: entry.timestamp, y: entry.sonnet || 0 })),
-                borderColor: '#f43f5e',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                stepped: true,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                pointHitRadius: 10
-            });
-        }
-    }
-
-    if (showOpus) {
-        const opusData = history.map((entry) => entry.opus || 0);
-        if (opusData.some((value) => value > 0)) {
-            datasets.push({
-                label: 'Opus',
-                data: history.map((entry) => ({ x: entry.timestamp, y: entry.opus || 0 })),
-                borderColor: '#f59e0b',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                stepped: true,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                pointHitRadius: 10
-            });
-        }
-    }
-
-    if (showCowork) {
-        const coworkData = history.map((entry) => entry.cowork || 0);
-        if (coworkData.some((value) => value > 0)) {
-            datasets.push({
-                label: 'Cowork',
-                data: history.map((entry) => ({ x: entry.timestamp, y: entry.cowork || 0 })),
-                borderColor: '#06b6d4',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                stepped: true,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                pointHitRadius: 10
-            });
-        }
-    }
-
-    if (showDesign) {
-        const designData = history.map((entry) => entry.design || 0);
-        if (designData.some((value) => value > 0)) {
-            datasets.push({
-                label: 'Design',
-                data: history.map((entry) => ({ x: entry.timestamp, y: entry.design || 0 })),
-                borderColor: '#92400e',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                stepped: true,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                pointHitRadius: 10
-            });
-        }
-    }
-
-    if (showOAuthApps) {
-        const oauthAppsData = history.map((entry) => entry.oauthApps || 0);
-        if (oauthAppsData.some((value) => value > 0)) {
-            datasets.push({
-                label: 'OAuth Apps',
-                data: history.map((entry) => ({ x: entry.timestamp, y: entry.oauthApps || 0 })),
-                borderColor: '#f97316',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                stepped: true,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                pointHitRadius: 10
-            });
-        }
-    }
-
-    if (showExtraUsage) {
-        const extraUsageData = history.map((entry) => entry.extraUsage || 0);
-        if (extraUsageData.some((value) => value > 0)) {
-            datasets.push({
-            label: 'Extra Usage',
-            data: history.map((entry) => ({ x: entry.timestamp, y: entry.extraUsage || 0 })),
-            borderColor: '#f59e0b',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            stepped: true,
-            pointRadius: 0,
-            pointHoverRadius: 3,
-            pointHitRadius: 10
-            });
-        }
-    }
 
     const firstDayMidnight = new Date(history[0].timestamp);
     firstDayMidnight.setHours(0, 0, 0, 0);

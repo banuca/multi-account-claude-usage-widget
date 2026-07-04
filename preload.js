@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API
   fetchUsageData: (accountId) => ipcRenderer.invoke('fetch-usage-data', accountId),
-  getUsageHistory: () => ipcRenderer.invoke('get-usage-history'),
+  getUsageHistory: (accountId) => ipcRenderer.invoke('get-usage-history', accountId),
   openExternal: (url) => {
     if (isAllowedExternalUrl(url)) {
       ipcRenderer.send('open-external', url);

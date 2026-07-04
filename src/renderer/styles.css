@@ -628,6 +628,24 @@ body {
     height: 220px;
 }
 .graph-section canvas { width: 100% !important; height: 100% !important; }
+.graph-account-chips { display: none; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.graph-account-chip {
+    background: var(--chip);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 20px;
+    cursor: pointer;
+}
+.graph-account-chip.active {
+    background: var(--accent-solid);
+    border-color: var(--accent-solid);
+    color: var(--accent-ink);
+    font-weight: 600;
+}
 .graph-btn.active {
     background: var(--chip);
     color: var(--accent-solid);
