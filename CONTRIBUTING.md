@@ -190,9 +190,9 @@ app.whenReady().then(() => {
 - [ ] Settings persist across restarts
 - [ ] Logout clears session
 - [ ] Auto-update check works
-- [ ] Window position/size persists
-- [ ] Compact mode works
-- [ ] Usage graph displays
+- [ ] Window bounds (position/size) persist across restarts
+- [ ] Resizing from every edge/corner works and clamps at the 480×150 minimum
+- [ ] Usage graph displays and account chips switch datasets
 - [ ] Organization switching (if applicable)
 
 ### Platform-Specific Testing

@@ -211,8 +211,6 @@ body {
 .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.title-divider { display: none; } /* superseded by the titlebar's own bottom border */
-
 /* ── Loading ────────────────────────────────────────────────────────────── */
 .loading-container {
     padding: 48px 20px;

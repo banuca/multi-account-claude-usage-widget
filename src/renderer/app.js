@@ -1,13 +1,10 @@
 // Application state
-let credentials = null;       // legacy single-account state (retained; unused in v1 multi-account)
 let updateInterval = null;
 let countdownInterval = null;
 let isExpanded = false;
 let usageChart = null;
 let graphVisible = false;
 let appInitializing = true;  // suppresses _saveViewState during startup restore
-let isFetching = false;       // in-flight guard — prevents overlapping fetchUsageData calls
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // v2.0 free-resize model: the user owns the window size. These are the only
 // two fixed sizes left — the design default for a true first run, and the
@@ -1122,10 +1119,6 @@ function refreshExtraTimers() {
     });
 }
 
-
-function normalizeUsageData(data) {
-    return data;
-}
 
 // Fire OS desktop notifications when usage crosses warn/danger thresholds.
 // Only fires once per threshold crossing per session window — not on every refresh.

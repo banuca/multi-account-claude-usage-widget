@@ -1,22 +1,25 @@
 # Claude Usage Widget
 
-A beautiful, standalone desktop widget for **Windows and Linux** that tracks your Claude.ai usage across **multiple accounts** in real time — with a themeable, at-a-glance card for each account.
+A beautiful, standalone desktop widget for **Windows and Linux** that tracks your Claude.ai usage across **multiple accounts** in real time — free-resizable, with a table-style card for each account.
 
-> **Project notice:** This is a fork maintained at `banuca/multi-account-claude-usage-widget`. It adds multi-account monitoring (e.g. personal + work) and a full themeable redesign on top of the original widget. The original MIT licence and copyright notice are retained.
+> **Project notice:** This is a fork maintained at `banuca/multi-account-claude-usage-widget`. It adds multi-account monitoring (e.g. personal + work), free window resizing, and a full visual redesign on top of the original widget. The original MIT licence and copyright notice are retained.
 
 ![Claude Usage Widget — Main](assets/screenshot-main.png)
+
+*(Screenshot pending refresh for the v2.0 redesign — see [What's New](#whats-new-in-v200) below.)*
 
 ---
 
 ## Features
 
-👥 **Multi-account monitoring** — One labelled card per account (personal, work, and more), each polled independently
-🎯 **Circular session gauge** — A ring per account showing session usage %, colored by status
-🚦 **Status chips** — Each card shows **Healthy / Warn / At limit** at a glance, with an animated at-limit pulse
-📊 **Weekly usage bar** — Weekly limit with remaining time and reset date
-🎨 **Five themes, switched live** — Aurora, Midnight, Nebula, Terminal and Daylight — pick one in Settings and it applies instantly, no restart
-🔒 **Fixed status colors** — Green/amber/red stay identical in every theme, so the limit signal is always readable; only the neutrals and accent change
-🔤 **Crafted typography** — Space Grotesk for the UI, JetBrains Mono for every number and label (both bundled — no network fonts)
+👥 **Multi-account monitoring** — One table block per account (personal, work, and more), each polled independently
+🖱️ **Free resize** — Drag any edge or corner; the layout adapts, hiding lower-priority columns as the window narrows
+🎯 **Session & weekly rows** — Bar + %, an elapsed-window ring, and resets-in/resets-at for both the current session and the weekly limit
+🚨 **"Closest to limit" badge** — A pulsing badge marks whichever account needs attention when you're tracking more than one
+📈 **Usage history graph** — Per-account chips switch between accounts' session/weekly history over the last 7 days
+🎨 **Dark / Light / System** — Switch instantly in Settings, no restart; System follows your OS live
+🔒 **Fixed status colors** — Accent, warn, and danger colors stay identical in Dark and Light, so the limit signal is always readable
+🔤 **Crafted typography** — Geist for the UI, Geist Mono for every number and label, Source Serif 4 for the wordmark (all bundled — no network fonts)
 🔄 **Auto-refresh** — Configurable interval with an animated refresh indicator
 📍 **Always on top** — User-controlled, stays visible across workspaces
 💾 **System tray** — Minimize to tray, with an optional per-account usage rollup in the tray tooltip
@@ -24,31 +27,29 @@ A beautiful, standalone desktop widget for **Windows and Linux** that tracks you
 🔔 **Update notifications** — Automatic check for new releases on startup
 🕐 **Configurable date & time formats** — 12h/24h time and flexible weekly reset date display
 🔒 **Secure** — Session keys stored locally in per-account encrypted storage
+🐧 **Native Linux integration** — `.deb` and AppImage builds, correct taskbar icon, pinnable, and autostart support
 
 ---
 
-## What's New in v1.0.0
+## What's New in v2.0.0
 
-### 🎨 Complete themeable redesign
+### 🖱️ Free resize by dragging
 
-The widget has been rebuilt around a per-account card:
+The window is no longer a fixed size — drag any edge or corner to resize it. The account list scrolls if it doesn't fit, and columns hide themselves as the window narrows (resets-at below 560px, the elapsed ring below 500px) instead of the app forcing a size on you.
 
-- A **circular session gauge** (usage % in the center) whose ring color reflects the account's status
-- A **status chip** — Healthy, Warn, or At limit — with an animated pulse when an account is maxed out
-- A **weekly usage bar** with "time left · reset date"
-- New typography: **Space Grotesk** (UI) + **JetBrains Mono** (numbers/labels), both bundled
+### 🎨 Full visual redesign
 
-### 🌈 Five live themes
+Every surface has been rebuilt around a cleaner table layout: a name row (with a pulsing "closest to limit" badge when tracking multiple accounts), column headers, and two data rows — current session and weekly limit — each with a bar, a percentage, an elapsed-window ring, and resets-in/resets-at times. New self-hosted typography (Geist, Geist Mono, Source Serif 4) and a Dark/Light/System theme switcher replace the previous 5-theme picker.
 
-Choose from **Aurora, Midnight, Nebula, Terminal, and Daylight** in Settings. The choice is saved and applied immediately — no restart.
+### 🐛 Bug fixes
 
-![Five themes](assets/screenshot-themes.png)
+- The usage history graph now actually records data (a wiring bug meant it was permanently empty in the previous multi-account release)
+- Usage alerts (the warn/danger notification toggle) are now wired up and fire per account
+- Closing the window with tray stats off now quits the app instead of leaving a headless background process
 
-Status colors (green / amber / red) are **fixed across every theme** on purpose — only the background, surface, and accent change — so a card that's at its limit reads the same whether you're in a dark or light theme.
+### 🐧 Linux packaging
 
-### 👥 Multi-account
-
-Add as many Claude.ai accounts as you like. Each gets its own card and its own session, polled independently, so you can watch a personal and a work account side by side.
+`.deb` packages (in addition to AppImage) for correct taskbar integration out of the box, a proper icon, AppImage desktop-entry registration so it's pinnable too, and working autostart via the XDG autostart spec.
 
 > For full release history, see the [Releases](../../releases) page.
 
@@ -63,11 +64,12 @@ Add as many Claude.ai accounts as you like. Each gets its own card and its own s
 Settings options:
 
 - 👥 **Accounts** — Add or remove Claude.ai accounts; rename any card
-- 🎨 **Theme** — Aurora / Midnight / Nebula / Terminal / Daylight
-- 📌 **Always on top** — Keep the widget above other windows
-- ⚙️ **Launch at startup** — Auto-start with login (Windows/macOS)
+- 🎨 **Theme** — Dark / Light / System
+- ⚙️ **Launch at startup** — Auto-start with login (Windows, macOS, and now Linux)
 - 🫥 **Hide from taskbar** — Tray-only mode
+- 📌 **Always on top** — Keep the widget above other windows
 - 📊 **Show tray stats** — Per-account usage rollup in the tray
+- 🔔 **Usage alerts** — Desktop notifications when an account crosses the warn/danger threshold
 - 🕐 **Time format** — 12h or 24h
 - 📅 **Date format** — Controls how the weekly reset date is displayed
 - ⏱️ **Auto-refresh** — How often usage is polled
@@ -85,7 +87,14 @@ Settings options:
 3. Launch "Claude Usage Widget" from the Start Menu (installer) or directly (portable)
 4. **To launch at Windows startup (portable only):** Press `Win+R`, type `shell:startup`, and copy the portable `.exe` into that folder. To update, copy the new version in and delete the old one.
 
-**Linux:**
+**Linux — `.deb` (recommended for Debian/Ubuntu and derivatives):**
+1. Download the latest `Claude-Usage-Widget-{version}-linux-amd64.deb` (Intel/AMD) or `Claude-Usage-Widget-{version}-linux-arm64.deb` (ARM) from [Releases](../../releases)
+2. Install it: `sudo apt install ./Claude-Usage-Widget-*.deb`
+3. Launch "Claude Usage Widget" from your application menu
+
+The `.deb` registers the app, icon, and menu entry for you — it shows the correct icon in the taskbar out of the box and is pinnable immediately.
+
+**Linux — AppImage (portable, no install):**
 1. Download the latest `Claude-Usage-Widget-{version}-linux-x86_64.AppImage` (Intel/AMD) or `Claude-Usage-Widget-{version}-linux-arm64.AppImage` (ARM) from [Releases](../../releases)
 2. Make it executable: `chmod +x Claude-Usage-Widget-*.AppImage`
 3. Run it: `./Claude-Usage-Widget-*.AppImage`
@@ -95,46 +104,9 @@ Settings options:
 > sudo apt install libfuse2
 > ```
 
-#### Linux: Desktop Launcher & Autostart (optional)
+On first run, the AppImage automatically registers a desktop entry and icon (`~/.local/share/applications/claude-usage-widget.desktop` + a hicolor icon) so it gets a correct taskbar icon and can be pinned, the same as the `.deb` gets automatically. If you move or update the AppImage file, this re-registers itself the next time you run it — no manual steps needed. (In earlier releases this required manually creating a `.desktop` file yourself; that's no longer necessary.)
 
-By default the AppImage runs from wherever you put it. To get a clickable icon in your app launcher (and optionally launch at login), follow these steps.
-
-**1. Place the AppImage somewhere permanent:**
-```bash
-mkdir -p ~/.local/bin
-mv Claude-Usage-Widget-*.AppImage ~/.local/bin/claude-usage-widget.AppImage
-chmod +x ~/.local/bin/claude-usage-widget.AppImage
-```
-
-**2. Create a desktop entry:**
-```bash
-cat > ~/.local/share/applications/claude-usage-widget.desktop << EOF
-[Desktop Entry]
-Name=Claude Usage Widget
-Comment=Monitor Claude.ai usage
-Exec=$HOME/.local/bin/claude-usage-widget.AppImage --no-sandbox
-Icon=$HOME/.local/bin/claude-usage-widget.AppImage
-Terminal=false
-Type=Application
-Categories=Utility;
-StartupNotify=true
-EOF
-```
-
-> **Note:** The `--no-sandbox` flag is required for Electron-based AppImages on most Linux systems due to sandbox namespace restrictions. This is an Electron/Chrome limitation, not specific to this widget.
-
-**3. Register the entry:**
-```bash
-update-desktop-database ~/.local/share/applications/
-```
-
-The widget should now appear in your application launcher. Test it by launching from your app menu before proceeding to autostart.
-
-**4. Autostart at login (optional):**
-```bash
-mkdir -p ~/.config/autostart
-cp ~/.local/share/applications/claude-usage-widget.desktop ~/.config/autostart/
-```
+**Autostart at login (deb or AppImage):** enable "Launch at startup" in Settings — this now works on Linux too, via a `~/.config/autostart` entry the app manages for you.
 
 ---
 
@@ -168,8 +140,10 @@ Repeat "Add account" (from Settings) for each additional account you want to tra
 ### Widget Controls
 
 - **Drag** — Click and drag the title bar to move the widget
+- **Resize** — Drag any edge or corner to resize freely (min 480×150); the size is remembered across restarts
 - **Settings** — Click the sliders icon to open Settings
 - **Refresh** — Click the refresh icon to update data immediately
+- **Graph** — Click the graph icon to show usage history; switch accounts with the chips above the chart
 - **Minimize** — Click the minus icon to hide to system tray / dock
 - **Close** — Click the X to close the app
 
@@ -181,21 +155,23 @@ Right-click the tray icon for: Show/Hide, Refresh, per-account details, Settings
 
 ## Understanding the Display
 
-Each account card shows:
+Each account gets two rows — **Current Session** (the 5-hour window) and **Weekly Limit** (the 7-day window) — with the same columns:
 
-| Element | Description |
-|---------|-------------|
-| Session gauge | Circular ring + % for the current 5-hour session window |
-| Status chip | Healthy / Warn / At limit for the account |
-| Session resets | Time remaining · local clock time when the session resets |
-| Week bar | Weekly limit usage, with time left · reset date |
+| Column | Description |
+|---|---|
+| Bar + % | Utilization for that window; amber for session, blue for weekly, swapping to red once that row crosses the danger threshold |
+| Elapsed ring | Fraction of the reset window elapsed (not the same as usage %) — turns red once the reset is imminent (≥90% elapsed) |
+| Resets in | Time remaining until that window resets |
+| Resets at | The local clock time (session) or date (weekly) the window resets |
 
-**Status colors (identical in every theme):**
-- 🟢 Green — Healthy (below the warn threshold, default 75%)
-- 🟠 Amber — Warn (at or above the warn threshold)
-- 🔴 Red — At limit (at or above the danger threshold, default 90%)
+If you're tracking two or more accounts, whichever one is closest to its limit gets a pulsing **"closest to limit"** badge next to its name once it crosses the warn threshold.
 
-The session ring and status chip use these colors; only the theme's background and accent change between themes.
+**Fixed colors (identical in Dark and Light):**
+- 🟣 Accent (purple) — the elapsed ring's default color
+- 🟠 Amber — warn threshold crossed (default 75%), and the "closest to limit" badge
+- 🔴 Red — danger threshold crossed (default 90%) — bars, and the elapsed ring past 90% elapsed
+
+Only the window background, text, and surface colors change between Dark and Light — the limit signal always reads the same.
 
 ---
 
@@ -233,8 +209,10 @@ If issues persist, open a [Support discussion](../../discussions/categories/supp
 - [x] Configurable date & time formats
 - [x] Update notifications
 - [x] Multi-account monitoring
-- [x] Themeable redesign (5 themes)
+- [x] Themeable redesign (5 themes → Dark/Light/System in v2.0)
 - [x] Organization/Teams support
+- [x] Free window resizing
+- [x] Native Linux packaging (deb, autostart, taskbar integration)
 - [ ] Keyboard shortcuts
 
 ---
