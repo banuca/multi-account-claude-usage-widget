@@ -62,9 +62,13 @@ let weeklyTray = null;   // Tray icon for Weekly usage
 // rebuilt as each account is polled.
 const latestUsageByAccount = {};
 
-// 400px matches the redesign mockup's widget proportions (gauge + details).
-const WIDGET_WIDTH = 400;
-const WIDGET_HEIGHT = 155;
+// v2.0 free-resize model: the user owns the window size (see createMainWindow).
+// 640 is the design default width used only for the very first run.
+const DEFAULT_WINDOW_WIDTH = 640;
+const DEFAULT_WINDOW_HEIGHT = 480;
+const MIN_WINDOW_WIDTH = 480;
+const MIN_WINDOW_HEIGHT = 150;
+let firstRunAutoSize = false; // true only until the renderer's one-time first-paint auto-size call lands
 const HISTORY_RETENTION_DAYS = 8;
 const CHART_DAYS = 7;
 const MAX_HISTORY_SAMPLES = 10000; // Cap total samples to prevent unbounded growth
@@ -297,14 +301,43 @@ function migrateLegacyAccount() {
   }
 }
 
+// Load persisted window bounds, migrating the old position-only `windowPosition`
+// key (pre-2.0, before the window was freely resizable) into the new
+// {x,y,width,height} shape. Returns null on a true first run — the caller then
+// auto-sizes to content on first paint (see set-window-bounds's firstRunAutoSize
+// handling below).
+function loadWindowBounds() {
+  const bounds = store.get('windowBounds');
+  if (bounds) return bounds;
+
+  const legacyPosition = store.get('windowPosition');
+  if (legacyPosition) {
+    const migrated = { x: legacyPosition.x, y: legacyPosition.y, width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT };
+    store.set('windowBounds', migrated);
+    store.delete('windowPosition');
+    return migrated;
+  }
+
+  return null;
+}
+
 function createMainWindow() {
-  const savedPosition = store.get('windowPosition');
+  const savedBounds = loadWindowBounds();
+  firstRunAutoSize = !savedBounds;
+
   const windowOptions = {
-    width: WIDGET_WIDTH,
-    height: WIDGET_HEIGHT,
+    width: savedBounds ? savedBounds.width : DEFAULT_WINDOW_WIDTH,
+    height: savedBounds ? savedBounds.height : DEFAULT_WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
+    // Transparent windows don't support native OS edge-resize (Electron docs), and
+    // flipping `resizable: true` risks breaking transparency on some platforms —
+    // so this stays false. The renderer drives resizing itself with pointer-driven
+    // grips that call setBounds() over the set-window-bounds IPC handler below,
+    // which works regardless of this flag.
     resizable: false,
     skipTaskbar: false,
     icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
@@ -315,22 +348,24 @@ function createMainWindow() {
     }
   };
 
-  if (savedPosition) {
-    windowOptions.x = savedPosition.x;
-    windowOptions.y = savedPosition.y;
+  if (savedBounds) {
+    windowOptions.x = savedBounds.x;
+    windowOptions.y = savedBounds.y;
   }
 
   mainWindow = new BrowserWindow(windowOptions);
   mainWindow.loadFile('src/renderer/index.html');
 
-  let positionSaveTimer = null;
-  mainWindow.on('move', () => {
-    if (positionSaveTimer) clearTimeout(positionSaveTimer);
-    positionSaveTimer = setTimeout(() => {
-      const position = mainWindow.getBounds();
-      store.set('windowPosition', { x: position.x, y: position.y });
+  let boundsSaveTimer = null;
+  const scheduleBoundsSave = () => {
+    if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+    boundsSaveTimer = setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      store.set('windowBounds', mainWindow.getBounds());
     }, 300);
-  });
+  };
+  mainWindow.on('move', scheduleBoundsSave);
+  mainWindow.on('resize', scheduleBoundsSave);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -1101,25 +1136,52 @@ ipcMain.on('close-window', () => {
   }
 });
 
-ipcMain.on('resize-window', (event, height) => {
-  if (mainWindow) {
-    mainWindow.setContentSize(WIDGET_WIDTH, height);
+// v2.0 free-resize model: the user owns the window size. The renderer's pointer-
+// driven resize grips call this on every frame while dragging; it clamps to the
+// minimum size (keeping the opposite edge fixed so the window doesn't jump) and
+// applies the bounds directly, regardless of the `resizable` window flag.
+ipcMain.handle('set-window-bounds', (event, bounds) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const current = mainWindow.getBounds();
+  let width = Math.round(bounds.width ?? current.width);
+  let height = Math.round(bounds.height ?? current.height);
+  let x = Math.round(bounds.x ?? current.x);
+  let y = Math.round(bounds.y ?? current.y);
+
+  if (width < MIN_WINDOW_WIDTH) {
+    if (x !== current.x) x = current.x + current.width - MIN_WINDOW_WIDTH;
+    width = MIN_WINDOW_WIDTH;
   }
+  if (height < MIN_WINDOW_HEIGHT) {
+    if (y !== current.y) y = current.y + current.height - MIN_WINDOW_HEIGHT;
+    height = MIN_WINDOW_HEIGHT;
+  }
+
+  mainWindow.setBounds({ x, y, width, height });
+
+  // Consume the one-time first-run auto-size: the renderer measures its own
+  // content height on first paint and calls this once to settle into it.
+  if (firstRunAutoSize) {
+    firstRunAutoSize = false;
+    store.set('windowBounds', mainWindow.getBounds());
+  }
+  return true;
 });
 
-ipcMain.handle('get-window-position', () => {
-  if (mainWindow) {
+ipcMain.handle('get-window-bounds', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow.getBounds();
   }
   return null;
 });
 
-ipcMain.handle('set-window-position', (event, { x, y }) => {
-  if (mainWindow) {
-    mainWindow.setPosition(x, y);
-    return true;
-  }
-  return false;
+// Tells the renderer whether this is a true first run (no stored bounds yet),
+// so it knows whether to perform the one-time content-height auto-size.
+ipcMain.handle('get-window-init-info', () => {
+  return {
+    bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
+    isFirstRun: firstRunAutoSize
+  };
 });
 
 ipcMain.on('open-external', (event, url) => {
@@ -1161,17 +1223,6 @@ ipcMain.on('show-notification', (event, { title, body }) => {
   }
 });
 
-// Resize window for compact vs normal mode
-// Compact: 290px wide, normal: 530px wide. Height stays managed by renderer.
-ipcMain.on('set-compact-mode', (event, compact) => {
-  if (mainWindow) {
-    const bounds = mainWindow.getBounds();
-    const width = compact ? 290 : WIDGET_WIDTH;
-    const height = compact ? 105 : WIDGET_HEIGHT;
-    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width, height });
-  }
-});
-
 // Settings handlers
 ipcMain.handle('get-settings', () => {
   return {
@@ -1184,7 +1235,6 @@ ipcMain.handle('get-settings', () => {
     timeFormat: store.get('settings.timeFormat', '12h'),
     weeklyDateFormat: store.get('settings.weeklyDateFormat', 'date'),
     usageAlerts: store.get('settings.usageAlerts', true),
-    compactMode: store.get('settings.compactMode', false),
     refreshInterval: store.get('settings.refreshInterval', '300'),
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
@@ -1205,7 +1255,6 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.timeFormat', settings.timeFormat);
   store.set('settings.weeklyDateFormat', settings.weeklyDateFormat);
   store.set('settings.usageAlerts', settings.usageAlerts);
-  store.set('settings.compactMode', settings.compactMode);
   store.set('settings.refreshInterval', settings.refreshInterval);
   store.set('settings.graphVisible', settings.graphVisible);
   store.set('settings.expandedOpen', settings.expandedOpen);

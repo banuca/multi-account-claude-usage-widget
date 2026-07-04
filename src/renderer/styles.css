@@ -65,12 +65,28 @@ body {
 }
 
 #app {
+    position: relative;
     width: 100%;
     height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
 }
+
+/* ── Free-resize grips ──────────────────────────────────────────────────────
+   Transparent windows don't support native OS edge-resize, so these invisible
+   zones drive setBounds() over IPC instead (see setupResizeGrips() in app.js).
+   Corners come after edges in the DOM so they sit on top in the shared corner
+   area and win the pointer target there. */
+.resize-grip { position: absolute; -webkit-app-region: no-drag; z-index: 30; }
+.resize-grip-n { top: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.resize-grip-s { bottom: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.resize-grip-e { top: 12px; bottom: 12px; right: 0; width: 6px; cursor: ew-resize; }
+.resize-grip-w { top: 12px; bottom: 12px; left: 0; width: 6px; cursor: ew-resize; }
+.resize-grip-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.resize-grip-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.resize-grip-se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.resize-grip-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
 
 /* ── Widget shell ───────────────────────────────────────────────────────── */
 .widget-container {
@@ -362,12 +378,22 @@ body {
 .content {
     padding: 14px 16px 16px;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
 
+/* The user owns the window size (v2.0 free-resize model) — this scrolls
+   instead of the window growing/shrinking to fit every account card. */
 #accountsContainer {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 /* One card per account */
@@ -927,51 +953,6 @@ body {
 }
 .coffee-btn svg { display: block; flex-shrink: 0; }
 .coffee-btn:hover { filter: brightness(1.1); }
-
-/* ── Compact mode (re-skinned) ──────────────────────────────────────────── */
-body.compact-mode .title { font-size: 14px; }
-.compact-content { position: relative; display: flex; align-items: center; padding: 6px 22px; flex: 1; }
-.compact-collapse-btn,
-.compact-expand-btn {
-    position: absolute;
-    width: 18px; height: 36px;
-    background: none; border: none;
-    color: var(--faint); cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0; z-index: 5;
-}
-.compact-collapse-btn { left: 2px; top: 40px; }
-.compact-expand-btn { right: 2px; top: 50%; transform: translateY(-50%); }
-.compact-collapse-btn:hover,
-.compact-expand-btn:hover { color: var(--text); }
-.compact-rows { display: flex; flex-direction: column; gap: 7px; width: 100%; }
-.compact-row { display: flex; align-items: center; gap: 8px; width: 100%; }
-.compact-label {
-    font-family: var(--font-mono);
-    color: var(--faint);
-    font-size: 10px;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    width: 54px;
-    flex-shrink: 0;
-}
-.compact-bar-wrap { flex: 1; min-width: 0; }
-.compact-bar-bg { position: relative; height: 14px; width: 100%; background: var(--track); border-radius: 4px; overflow: hidden; }
-.compact-bar-fill { height: 100%; background: var(--ok); border-radius: 4px; transition: width .6s ease; }
-.compact-bar-fill.warning { background: var(--warn); }
-.compact-bar-fill.danger { background: var(--crit); }
-.compact-pct {
-    position: absolute;
-    left: 50%; top: 50%;
-    transform: translate(-50%, -50%);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    color: var(--text);
-    pointer-events: none;
-    white-space: nowrap;
-}
-.compact-settings-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 18px; }
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 8px; }

@@ -19,6 +19,18 @@
 
 <body>
     <div id="app">
+        <!-- Free-resize grips (transparent windows don't support native OS
+             edge-resize; these drive setBounds() over IPC — see setupResizeGrips()
+             in app.js). Edges first, corners on top so they win in the shared corners. -->
+        <div class="resize-grip resize-grip-n" data-edge="n"></div>
+        <div class="resize-grip resize-grip-s" data-edge="s"></div>
+        <div class="resize-grip resize-grip-e" data-edge="e"></div>
+        <div class="resize-grip resize-grip-w" data-edge="w"></div>
+        <div class="resize-grip resize-grip-ne" data-edge="ne"></div>
+        <div class="resize-grip resize-grip-nw" data-edge="nw"></div>
+        <div class="resize-grip resize-grip-se" data-edge="se"></div>
+        <div class="resize-grip resize-grip-sw" data-edge="sw"></div>
+
         <div class="widget-container" id="widgetContainer">
             <!-- Title Bar -->
             <div class="title-bar" id="titleBar">
@@ -138,11 +150,6 @@
             <!-- Main Content -->
             <div class="content" id="mainContent" style="display: none;">
 
-                <!-- Compact toggle chevron — fixed position, does not move with expand -->
-                <button class="compact-collapse-btn" id="compactCollapseBtn" title="Compact mode" style="display: none;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-
                 <!-- Multi-account cards render here, one per account -->
                 <div id="accountsContainer"></div>
 
@@ -223,34 +230,6 @@
 
             </div>
 
-            <!-- Compact Content -->
-            <div class="compact-content" id="compactContent" style="display: none;">
-                <!-- Expand chevron — right edge, returns to normal mode -->
-                <button class="compact-expand-btn" id="compactExpandBtn" title="Normal mode">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-                <div class="compact-rows">
-                    <div class="compact-row">
-                        <span class="compact-label">Session</span>
-                        <div class="compact-bar-wrap">
-                            <div class="compact-bar-bg">
-                                <div class="compact-bar-fill" id="compactSessionFill" style="width: 0%"></div>
-                                <span class="compact-pct" id="compactSessionPct">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="compact-row">
-                        <span class="compact-label">Weekly</span>
-                        <div class="compact-bar-wrap">
-                            <div class="compact-bar-bg">
-                                <div class="compact-bar-fill weekly" id="compactWeeklyFill" style="width: 0%"></div>
-                                <span class="compact-pct" id="compactWeeklyPct">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Settings Overlay (normal mode) -->
             <div class="settings-overlay" id="settingsOverlay" style="display: none;">
                 <div class="settings-content">
@@ -327,7 +306,6 @@
 
                         <!-- Retained (hidden in v1) — kept so app.js state stays intact -->
                         <div style="display: none;">
-                            <label class="toggle-switch"><input type="checkbox" id="compactModeToggle"><span class="toggle-slider"></span></label>
                             <label class="toggle-switch"><input type="checkbox" id="usageAlertsToggle"><span class="toggle-slider"></span></label>
                             <div id="orgSelectorCol" style="display: none;">
                                 <select id="orgSelector" class="settings-select"></select>
@@ -397,24 +375,6 @@
                             </svg>
                             Buy me a coffee
                         </button>
-                    </div>
-                </div>
-            </div>
-            <!-- Compact Settings Overlay (shown only in compact mode) -->
-            <div class="settings-overlay compact-settings-overlay" id="compactSettingsOverlay" style="display: none;">
-                <div class="settings-content">
-                    <div class="settings-header">
-                        <span class="settings-title">Settings</span>
-                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Done">Done</button>
-                    </div>
-                    <div class="compact-settings-body">
-                        <div class="settings-col">
-                            <span class="settings-row-label">Compact mode</span>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="compactModeToggleCompact">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
                     </div>
                 </div>
             </div>

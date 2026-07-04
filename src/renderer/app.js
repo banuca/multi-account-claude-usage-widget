@@ -2,16 +2,19 @@
 let credentials = null;       // legacy single-account state (retained; unused in v1 multi-account)
 let updateInterval = null;
 let countdownInterval = null;
-let latestUsageData = null;
 let isExpanded = false;
-let isCompactMode = false;
-let _settingsOpenedFromCompact = false;
 let usageChart = null;
 let graphVisible = false;
-let graphWasVisible = false; // preserves graph state across compact mode toggle
 let appInitializing = true;  // suppresses _saveViewState during startup restore
 let isFetching = false;       // in-flight guard — prevents overlapping fetchUsageData calls
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+// v2.0 free-resize model: the user owns the window size. These are the only
+// two fixed sizes left — the design default for a true first run, and the
+// minimum height the settings panel temporarily grows to if the window is
+// shorter than that when it's opened (restored on close).
+const DEFAULT_WINDOW_WIDTH = 640;
+const SETTINGS_MIN_HEIGHT = 540;
 
 // ── Multi-account state ──────────────────────────────────────────────────────
 let accounts = [];                    // [{ id, label, orgId, organizations, hasSession }]
@@ -25,10 +28,6 @@ let pendingValidation = null;         // { sessionKey, organizations } awaiting 
 
 // Fork release page (in-app update check + banner link)
 const RELEASES_URL = 'https://github.com/banuca/multi-account-claude-usage-widget/releases/latest';
-const SETTINGS_HEIGHT = 690;          // window height while the settings panel is open
-const WIDGET_HEIGHT_COLLAPSED = 155;
-const WIDGET_ROW_HEIGHT = 30;
-const GRAPH_HEIGHT = 232;
 
 // ── Theme system ─────────────────────────────────────────────────────────────
 // Five named themes. Values are copied verbatim from the redesign mockup's
@@ -152,18 +151,7 @@ const elements = {
     updateBannerDismiss: document.getElementById('updateBannerDismiss'),
     settingsVersionLabel: document.getElementById('settingsVersionLabel'),
     settingsUpdateLink: document.getElementById('settingsUpdateLink'),
-    usageAlertsToggle: document.getElementById('usageAlertsToggle'),
-    compactModeToggle: document.getElementById('compactModeToggle'),
-    compactModeToggleCompact: document.getElementById('compactModeToggleCompact'),
-    compactContent: document.getElementById('compactContent'),
-    compactCollapseBtn: document.getElementById('compactCollapseBtn'),
-    compactExpandBtn: document.getElementById('compactExpandBtn'),
-    compactSessionFill: document.getElementById('compactSessionFill'),
-    compactSessionPct: document.getElementById('compactSessionPct'),
-    compactWeeklyFill: document.getElementById('compactWeeklyFill'),
-    compactWeeklyPct: document.getElementById('compactWeeklyPct'),
-    compactSettingsOverlay: document.getElementById('compactSettingsOverlay'),
-    closeCompactSettingsBtn: document.getElementById('closeCompactSettingsBtn')
+    usageAlertsToggle: document.getElementById('usageAlertsToggle')
 };
 
 // Multi-account element refs (added after the base object above)
@@ -206,12 +194,15 @@ async function init() {
             elements.graphBtn.classList.add('active');
             elements.graphSection.style.display = 'block';
             await loadChart();
-            resizeWidget();
         }
     } else {
         // First run — no accounts yet. Open the add-account flow.
         startAddAccount({ fromSettings: false });
     }
+
+    // One-time content-height auto-size — a no-op after the first run ever
+    // stores windowBounds (the user owns the size from then on).
+    await applyFirstRunAutoSize();
 
     // Populate version label then check for updates after a short delay
     const version = await window.electronAPI.getAppVersion();
@@ -282,7 +273,6 @@ function setupEventListeners() {
         elements.graphBtn.classList.toggle('active', graphVisible);
         elements.graphSection.style.display = graphVisible ? 'block' : 'none';
         if (graphVisible) await loadChart();
-        resizeWidget();
         _saveViewState();
     });
 
@@ -298,7 +288,7 @@ function setupEventListeners() {
     elements.closeSettingsBtn.addEventListener('click', async () => {
         await saveSettings();
         elements.settingsOverlay.style.display = 'none';
-        resizeWidget();
+        await restoreBoundsAfterSettingsGrow();
         startAutoUpdate();
     });
 
@@ -346,7 +336,6 @@ function setupEventListeners() {
     // Update banner (points at this fork's releases)
     elements.updateBannerDismiss.addEventListener('click', () => {
         elements.updateBanner.style.display = 'none';
-        resizeWidget();
     });
     elements.updateBannerText.addEventListener('click', () => {
         window.electronAPI.openExternal(RELEASES_URL);
@@ -360,7 +349,101 @@ function setupEventListeners() {
         stopAutoUpdate();
         await loadSettings();
         elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(SETTINGS_HEIGHT);
+        await growBoundsForSettingsIfNeeded();
+    });
+
+    setupResizeGrips();
+}
+
+// If the window is shorter than the settings panel needs, temporarily grow it
+// (keeping x/y and width) so the panel isn't cramped; restored on Done.
+let _boundsBeforeSettingsGrow = null;
+async function growBoundsForSettingsIfNeeded() {
+    const bounds = await window.electronAPI.getWindowBounds();
+    if (!bounds || bounds.height >= SETTINGS_MIN_HEIGHT) return;
+    _boundsBeforeSettingsGrow = bounds;
+    await window.electronAPI.setWindowBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: SETTINGS_MIN_HEIGHT });
+}
+
+async function restoreBoundsAfterSettingsGrow() {
+    if (!_boundsBeforeSettingsGrow) return;
+    await window.electronAPI.setWindowBounds(_boundsBeforeSettingsGrow);
+    _boundsBeforeSettingsGrow = null;
+}
+
+// One-time content-height auto-size for a true first run (no windowBounds
+// stored yet). No-op on every subsequent call — the main process consumes the
+// firstRunAutoSize flag on the first set-window-bounds call it sees.
+async function applyFirstRunAutoSize() {
+    const info = await window.electronAPI.getWindowInitInfo();
+    if (!info || !info.isFirstRun) return;
+
+    const titleBar = document.getElementById('titleBar');
+    let height = titleBar ? titleBar.offsetHeight : 36;
+    if (elements.updateBanner && elements.updateBanner.style.display !== 'none') {
+        height += elements.updateBanner.offsetHeight;
+    }
+    if (elements.mainContent.style.display !== 'none') {
+        height += elements.mainContent.scrollHeight;
+    } else if (elements.loginContainer.style.display !== 'none') {
+        height += elements.loginContainer.scrollHeight;
+    }
+
+    await window.electronAPI.setWindowBounds({ width: DEFAULT_WINDOW_WIDTH, height: Math.ceil(height) + 4 });
+}
+
+// Pointer-driven resize grips — transparent windows don't support native OS
+// edge-resize, so 8 invisible grip zones (4 edges + 4 corners) drive
+// setBounds() over IPC directly, throttled to one call per animation frame.
+function setupResizeGrips() {
+    const grips = document.querySelectorAll('.resize-grip');
+    let active = null; // { edge, startBounds, startScreenX, startScreenY }
+    let pendingBounds = null;
+    let rafScheduled = false;
+
+    const flushPendingBounds = () => {
+        rafScheduled = false;
+        if (pendingBounds) window.electronAPI.setWindowBounds(pendingBounds);
+    };
+
+    grips.forEach((grip) => {
+        grip.addEventListener('pointerdown', async (e) => {
+            const edge = grip.dataset.edge;
+            const startBounds = await window.electronAPI.getWindowBounds();
+            if (!startBounds) return;
+            active = { edge, startBounds, startScreenX: e.screenX, startScreenY: e.screenY };
+            grip.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        });
+
+        grip.addEventListener('pointermove', (e) => {
+            if (!active) return;
+            const dx = e.screenX - active.startScreenX;
+            const dy = e.screenY - active.startScreenY;
+            const { edge, startBounds } = active;
+            let { x, y, width, height } = startBounds;
+
+            if (edge.includes('e')) width = startBounds.width + dx;
+            if (edge.includes('s')) height = startBounds.height + dy;
+            if (edge.includes('w')) { width = startBounds.width - dx; x = startBounds.x + dx; }
+            if (edge.includes('n')) { height = startBounds.height - dy; y = startBounds.y + dy; }
+
+            pendingBounds = { x, y, width, height };
+            if (!rafScheduled) {
+                rafScheduled = true;
+                requestAnimationFrame(flushPendingBounds);
+            }
+        });
+
+        const endDrag = (e) => {
+            if (active) {
+                try { grip.releasePointerCapture(e.pointerId); } catch (_) {}
+            }
+            active = null;
+            pendingBounds = null;
+        };
+        grip.addEventListener('pointerup', endDrag);
+        grip.addEventListener('pointercancel', endDrag);
     });
 }
 
@@ -402,8 +485,6 @@ function showAddAccountUI() {
     elements.settingsBtn.style.display = 'none';
     elements.refreshBtn.style.display = 'none';
     elements.graphBtn.style.display = 'none';
-
-    window.electronAPI.resizeWindow(380);
 }
 
 function cancelAddAccount() {
@@ -585,7 +666,6 @@ function renderAccounts() {
             markAccountExpired(account.id);
         }
     }
-    if (!isCompactMode) resizeWidget();
 }
 
 // Clone the template for one account and cache its scoped elements.
@@ -691,7 +771,6 @@ function updateAccountCard(accountId, data) {
     }
 
     updateWidgetFooter();
-    if (!isCompactMode) resizeWidget();
 }
 
 // Recompute the reset lines for every card (called on an interval so the
@@ -738,7 +817,6 @@ function markAccountExpired(accountId) {
         entry.card.classList.add('expired');
         entry.els.reconnectBtn.style.display = 'inline-flex';
     }
-    if (!isCompactMode) resizeWidget();
 }
 
 function clearAccountExpired(accountId) {
@@ -811,7 +889,6 @@ async function removeAccountFromUI(accountId) {
         startAddAccount({ fromSettings: false });
     } else {
         updateWidgetFooter();
-        resizeWidget();
         if (selectedGraphAccountId === accountId) selectedGraphAccountId = null;
         if (graphVisible) await loadChart();
     }
@@ -1028,33 +1105,6 @@ function refreshExtraTimers() {
     });
 }
 
-const BANNER_HEIGHT = 28;
-const EXPAND_OVERHEAD = 28; // margin-top(12) + padding-top(6) + bottom buffer(10)
-
-// Size the window to the rendered content. We sum the title bar + update banner
-// + the visible state container (mainContent or the add-account view). Measuring
-// the content — rather than the 100vh #widgetContainer, whose scrollHeight can't
-// report a height smaller than the current window — lets the widget both grow for
-// extra account cards and shrink back down.
-function resizeWidget() {
-    const titleBar = document.getElementById('titleBar');
-    let h = titleBar ? titleBar.offsetHeight : 36;
-
-    if (elements.updateBanner && elements.updateBanner.style.display !== 'none') {
-        h += elements.updateBanner.offsetHeight;
-    }
-
-    if (elements.mainContent.style.display !== 'none') {
-        h += elements.mainContent.scrollHeight;
-    } else if (elements.loginContainer.style.display !== 'none') {
-        h += elements.loginContainer.scrollHeight;
-    } else {
-        h = WIDGET_HEIGHT_COLLAPSED;
-    }
-
-    const totalHeight = Math.max(WIDGET_HEIGHT_COLLAPSED, Math.ceil(h) + 4);
-    window.electronAPI.resizeWindow(totalHeight);
-}
 
 function normalizeUsageData(data) {
     return data;
@@ -1114,98 +1164,6 @@ function checkUsageAlerts(account, data) {
             'Weekly Limit usage has reached the warning threshold'
         );
     }
-}
-
-// Apply or remove compact mode — switches view, resizes window, syncs all toggles
-function applyCompactMode(compact) {
-    isCompactMode = compact;
-
-    // Add/remove compact-mode class from body for CSS styling
-    if (compact) {
-        document.body.classList.add('compact-mode');
-    } else {
-        document.body.classList.remove('compact-mode');
-    }
-
-    // Show/hide the correct content view
-    elements.mainContent.style.display = compact ? 'none' : 'block';
-    elements.compactContent.style.display = compact ? 'flex' : 'none';
-
-    // Collapse extra rows when entering compact — prevents stale isExpanded state
-    if (compact && isExpanded) {
-        isExpanded = false;
-        elements.expandArrow.classList.remove('expanded');
-        elements.expandSection.style.display = 'none';
-    }
-
-    if (compact && graphVisible) {
-        graphWasVisible = true;
-        graphVisible = false;
-        elements.graphBtn.classList.remove('active');
-        elements.graphSection.style.display = 'none';
-    } else if (!compact && graphWasVisible) {
-        graphWasVisible = false;
-        graphVisible = true;
-        elements.graphBtn.classList.add('active');
-        elements.graphSection.style.display = 'block';
-        loadChart();
-    }
-
-    // Show/hide the collapse chevron (only visible in normal mode with data)
-    if (elements.compactCollapseBtn) {
-        elements.compactCollapseBtn.style.display = compact ? 'none' : 'flex';
-    }
-
-    // Keep refresh button visible in compact mode so users can see when data updates
-    // Hide graph button in compact mode (not applicable)
-    if (elements.graphBtn) {
-        elements.graphBtn.style.display = compact ? 'none' : '';
-    }
-
-    // Tell main process to resize the window width
-    window.electronAPI.setCompactMode(compact);
-
-    // Sync both settings toggles
-    if (elements.compactModeToggle) elements.compactModeToggle.checked = compact;
-    if (elements.compactModeToggleCompact) elements.compactModeToggleCompact.checked = compact;
-
-    // Update compact bars if we have data
-    if (compact && latestUsageData) updateCompactBars(latestUsageData);
-    if (!compact) resizeWidget();
-
-    // Persist graph/expanded state changes caused by compact mode toggle
-    _saveViewState();
-}
-
-// Update the compact mode progress bars
-function updateCompactBars(data) {
-    const sessionPct = Math.min(Math.max(data.five_hour?.utilization || 0, 0), 100);
-    const weeklyPct = Math.min(Math.max(data.seven_day?.utilization || 0, 0), 100);
-
-    elements.compactSessionFill.style.width = `${sessionPct}%`;
-    elements.compactSessionPct.textContent = `${Math.round(sessionPct)}%`;
-    elements.compactWeeklyFill.style.width = `${weeklyPct}%`;
-    elements.compactWeeklyPct.textContent = `${Math.round(weeklyPct)}%`;
-
-    // Apply warning/danger classes to compact bars
-    elements.compactSessionFill.className = 'compact-bar-fill';
-    if (sessionPct >= dangerThreshold) elements.compactSessionFill.classList.add('danger');
-    else if (sessionPct >= warnThreshold) elements.compactSessionFill.classList.add('warning');
-
-    elements.compactWeeklyFill.className = 'compact-bar-fill weekly';
-    if (weeklyPct >= dangerThreshold) elements.compactWeeklyFill.classList.add('danger');
-    else if (weeklyPct >= warnThreshold) elements.compactWeeklyFill.classList.add('warning');
-}
-// Persist compact mode setting without touching the rest of settings — debounced
-let _saveCompactTimer = null;
-async function _saveCompactSetting(compact) {
-    if (_saveCompactTimer) clearTimeout(_saveCompactTimer);
-    _saveCompactTimer = setTimeout(async () => {
-        const settings = window._cachedSettings || await window.electronAPI.getSettings();
-        settings.compactMode = compact;
-        window._cachedSettings = settings;
-        await window.electronAPI.saveSettings(settings);
-    }, 300);
 }
 
 // Persist graph/expanded visibility state — debounced to avoid hammering disk on rapid toggles
@@ -1366,7 +1324,6 @@ function showMainContent() {
     elements.refreshBtn.style.display = 'flex';
     elements.graphBtn.style.display = 'flex';
     startCountdown();
-    resizeWidget();
 }
 
 // Auto-update management
@@ -1620,7 +1577,6 @@ async function loadSettings() {
     elements.weeklyDateFormat.value = settings.weeklyDateFormat || 'date';
     if (elements.refreshInterval) elements.refreshInterval.value = settings.refreshInterval || '300';
     elements.usageAlertsToggle.checked = settings.usageAlerts !== false;
-    if (elements.compactModeToggle) elements.compactModeToggle.checked = !!settings.compactMode;
 
     // Render the accounts management list; the single-account "Log Out" is gone
     // (accounts are removed individually from the list).
@@ -1655,7 +1611,6 @@ async function saveSettings() {
         weeklyDateFormat: elements.weeklyDateFormat.value || 'date',
         refreshInterval: elements.refreshInterval ? (elements.refreshInterval.value || '300') : '300',
         usageAlerts: elements.usageAlertsToggle.checked,
-        compactMode: isCompactMode,
         graphVisible: graphVisible,
         expandedOpen: isExpanded
     };
@@ -1739,10 +1694,9 @@ async function checkForUpdate() {
 
         const version = result.version;
 
-        // Show banner and expand window to compensate
+        // Show the update banner — the accounts container scrolls if it doesn't fit.
         elements.updateBannerText.textContent = `▲  Version ${version} available — click to download`;
         elements.updateBanner.style.display = 'flex';
-        resizeWidget(true);
 
         // Populate settings panel link if already visible
         if (elements.settingsUpdateLink) {

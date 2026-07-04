@@ -33,11 +33,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
-  resizeWindow: (height) => ipcRenderer.send('resize-window', height),
 
-  // Window position
-  getWindowPosition: () => ipcRenderer.invoke('get-window-position'),
-  setWindowPosition: (position) => ipcRenderer.invoke('set-window-position', position),
+  // Window bounds — the user owns the window size (v2.0 free-resize model).
+  // Resize grips + first-run auto-size + the settings temporary-grow all drive
+  // through setWindowBounds; getWindowInitInfo tells the renderer whether this
+  // is a true first run so it knows whether to auto-size to content once.
+  getWindowBounds: () => ipcRenderer.invoke('get-window-bounds'),
+  setWindowBounds: (bounds) => ipcRenderer.invoke('set-window-bounds', bounds),
+  getWindowInitInfo: () => ipcRenderer.invoke('get-window-init-info'),
 
   // Event listeners
   onRefreshUsage: (callback) => {
@@ -73,8 +76,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Notifications
-  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
-
-  // Compact mode
-  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact)
+  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body })
 });
