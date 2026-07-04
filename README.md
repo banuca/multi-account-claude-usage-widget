@@ -1,12 +1,23 @@
 # Claude Usage Widget
 
-A beautiful, standalone desktop widget for **Windows and Linux** that tracks your Claude.ai usage across **multiple accounts** in real time — free-resizable, with a table-style card for each account.
+A beautiful, freely resizable desktop widget for **Windows and Linux** that tracks your Claude.ai usage across **multiple accounts** in real time, with a clean table-style card for each account.
 
 > **Project notice:** This is a fork maintained at `banuca/multi-account-claude-usage-widget`. It adds multi-account monitoring (e.g. personal + work), free window resizing, and a full visual redesign on top of the original widget. The original MIT licence and copyright notice are retained.
 
-![Claude Usage Widget — Main](assets/screenshot-main.png)
+---
 
-*(Screenshot pending refresh for the v2.0 redesign — see [What's New](#whats-new-in-v200) below.)*
+## Contents
+
+- [Features](#features)
+- [What's New in v2.0.0](#whats-new-in-v200)
+- [Settings](#settings)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Understanding the Display](#understanding-the-display)
+- [Privacy & Security](#privacy--security)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
+- [Support](#support)
 
 ---
 
@@ -18,7 +29,7 @@ A beautiful, standalone desktop widget for **Windows and Linux** that tracks you
 🚨 **"Closest to limit" badge** — A pulsing badge marks whichever account needs attention when you're tracking more than one
 📈 **Usage history graph** — Per-account chips switch between accounts' session/weekly history over the last 7 days
 🎨 **Dark / Light / System** — Switch instantly in Settings, no restart; System follows your OS live
-🔒 **Fixed status colors** — Accent, warn, and danger colors stay identical in Dark and Light, so the limit signal is always readable
+🚦 **Fixed status colors** — Accent, warn, and danger colors stay identical in Dark and Light, so the limit signal is always readable
 🔤 **Crafted typography** — Geist for the UI, Geist Mono for every number and label, Source Serif 4 for the wordmark (all bundled — no network fonts)
 🔄 **Auto-refresh** — Configurable interval with an animated refresh indicator
 📍 **Always on top** — User-controlled, stays visible across workspaces
@@ -55,17 +66,11 @@ Every surface has been rebuilt around a cleaner table layout: a name row (with a
 
 ---
 
-## Screenshots
-
-### Settings Panel
-
-![Claude Usage Widget — Settings](assets/screenshot-settings.png)
-
-Settings options:
+## Settings
 
 - 👥 **Accounts** — Add or remove Claude.ai accounts; rename any card
 - 🎨 **Theme** — Dark / Light / System
-- ⚙️ **Launch at startup** — Auto-start with login (Windows, macOS, and now Linux)
+- ⚙️ **Launch at startup** — Auto-start with login (Windows, and now Linux too)
 - 🫥 **Hide from taskbar** — Tray-only mode
 - 📌 **Always on top** — Keep the widget above other windows
 - 📊 **Show tray stats** — Per-account usage rollup in the tray
