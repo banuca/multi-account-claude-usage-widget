@@ -1,4 +1,4 @@
-﻿name: Build Linux (AppImage)
+﻿name: Build Linux (AppImage + deb)
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Install Linux build dependencies
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools
 
-      - name: Build Electron app (AppImage)
+      - name: Build Electron app (AppImage + deb)
         run: npm run build:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,6 +58,13 @@ jobs:
           path: dist/*arm64*.AppImage
           if-no-files-found: error
 
+      - name: Upload deb packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: Claude-Usage-Widget-linux-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
       - name: Upload to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -67,5 +74,6 @@ jobs:
           files: |
             dist/*x86_64*.AppImage
             dist/*arm64*.AppImage
+            dist/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

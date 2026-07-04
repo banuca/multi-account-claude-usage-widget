@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, nativeTheme } = require('electron');
 const path = require('path');
 const https = require('https');
+const { execFile } = require('child_process');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { computeWorstAccount, createLegacyAccountMigration } = require('./src/account-logic');
@@ -340,7 +341,7 @@ function createMainWindow() {
     // which works regardless of this flag.
     resizable: false,
     skipTaskbar: false,
-    icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
+    icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/icons/512x512.png' : 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -355,6 +356,12 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow(windowOptions);
   mainWindow.loadFile('src/renderer/index.html');
+
+  // Belt-and-braces for X11 window managers that don't pick up the
+  // BrowserWindow `icon` option reliably (see ensureLinuxDesktopIntegration).
+  if (process.platform === 'linux') {
+    mainWindow.setIcon(nativeImage.createFromPath(path.join(__dirname, 'assets/icons/512x512.png')));
+  }
 
   let boundsSaveTimer = null;
   const scheduleBoundsSave = () => {
@@ -1252,8 +1259,10 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
-  const supportsLoginItems = process.platform !== 'linux';
-  const autoStart = supportsLoginItems ? settings.autoStart : false;
+  const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
+  // Portable builds skip autostart entirely — autorun via registry is unreliable
+  // when the exe path changes with each version; users should use shell:startup.
+  const autoStart = isPortable ? false : settings.autoStart;
 
   store.set('settings.autoStart', autoStart);
   store.set('settings.minimizeToTray', settings.minimizeToTray);
@@ -1269,13 +1278,12 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.expandedOpen', settings.expandedOpen);
   store.set('settings.showTrayStats', settings.showTrayStats);
 
-  const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
-
-  // openAtLogin is not supported on Linux — Electron silently ignores it.
-  // Skip the call entirely to avoid misleading behaviour.
-  // Also skip for portable builds — autorun via registry is unreliable when the
-  // exe path changes with each version. Users should use shell:startup instead.
-  if (supportsLoginItems && !isPortable) {
+  // openAtLogin is not supported on Linux — Electron silently ignores it, so
+  // autostart is implemented ourselves via the XDG autostart spec instead.
+  // Portable builds skip autostart entirely (see isPortable above).
+  if (process.platform === 'linux') {
+    setLinuxAutostart(autoStart);
+  } else if (!isPortable) {
     app.setLoginItemSettings({
       openAtLogin: autoStart,
       ...(process.platform !== 'darwin' && { path: app.getPath('exe') })
@@ -1537,6 +1545,84 @@ ipcMain.handle('fetch-usage-data', async (event, accountId) => {
   return data;
 });
 
+// ---------------------------------------------------------------------------
+// Linux desktop integration (icon, taskbar pinning, autostart)
+//
+// StartupWMClass must equal the real WM_CLASS the packaged app reports — this
+// value is package.json's build.linux.desktop.entry.StartupWMClass guess
+// (productName). VERIFY with `xprop WM_CLASS` on the built app before release
+// and update both places together if it's wrong.
+// ---------------------------------------------------------------------------
+const LINUX_WM_CLASS = 'Claude-Usage-Widget';
+const LINUX_ICON_NAME = 'claude-usage-widget';
+const LINUX_DESKTOP_ENTRY_NAME = 'claude-usage-widget.desktop';
+
+function linuxExecPath() {
+  return process.env.APPIMAGE || process.execPath;
+}
+
+function buildLinuxDesktopEntry(execPath, autostart) {
+  const lines = [
+    '[Desktop Entry]',
+    'Name=Claude Usage Widget',
+    'Comment=Monitor Claude.ai usage across accounts',
+    `Exec="${execPath}" %U`,
+    `Icon=${LINUX_ICON_NAME}`,
+    `StartupWMClass=${LINUX_WM_CLASS}`,
+    'Terminal=false',
+    'Type=Application',
+    'Categories=Utility;'
+  ];
+  if (autostart) lines.push('X-GNOME-Autostart-enabled=true');
+  return lines.join('\n') + '\n';
+}
+
+// AppImages aren't installed via a package manager, so no .desktop file exists
+// in ~/.local/share/applications for the window manager to match the running
+// window against — without one there's no correct taskbar icon and nothing to
+// pin. This writes the icon + a .desktop entry once per AppImage path (skip
+// silently on any error; .deb installs get this for free from electron-builder).
+function ensureLinuxDesktopIntegration() {
+  if (process.platform !== 'linux' || !process.env.APPIMAGE) return;
+
+  try {
+    const iconDir = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps');
+    fs.mkdirSync(iconDir, { recursive: true });
+    fs.copyFileSync(path.join(__dirname, 'assets/icons/512x512.png'), path.join(iconDir, `${LINUX_ICON_NAME}.png`));
+
+    const appsDir = path.join(os.homedir(), '.local', 'share', 'applications');
+    const desktopPath = path.join(appsDir, LINUX_DESKTOP_ENTRY_NAME);
+    const execPath = linuxExecPath();
+
+    // Rewrite only if missing or pointing at a stale AppImage path (moved/updated).
+    const upToDate = fs.existsSync(desktopPath) && fs.readFileSync(desktopPath, 'utf-8').includes(`Exec="${execPath}"`);
+    if (!upToDate) {
+      fs.mkdirSync(appsDir, { recursive: true });
+      fs.writeFileSync(desktopPath, buildLinuxDesktopEntry(execPath, false));
+      execFile('update-desktop-database', [appsDir], () => {}); // best-effort, ignore failure
+    }
+  } catch (err) {
+    debugLog('[Linux] Desktop integration skipped:', err.message);
+  }
+}
+
+// Electron's setLoginItemSettings is a no-op on Linux, so autostart is
+// implemented directly via the XDG autostart spec (~/.config/autostart).
+function setLinuxAutostart(enabled) {
+  try {
+    const autostartDir = path.join(os.homedir(), '.config', 'autostart');
+    const desktopPath = path.join(autostartDir, LINUX_DESKTOP_ENTRY_NAME);
+    if (enabled) {
+      fs.mkdirSync(autostartDir, { recursive: true });
+      fs.writeFileSync(desktopPath, buildLinuxDesktopEntry(linuxExecPath(), true));
+    } else if (fs.existsSync(desktopPath)) {
+      fs.unlinkSync(desktopPath);
+    }
+  } catch (err) {
+    debugLog('[Linux] Autostart toggle failed:', err.message);
+  }
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
   // History housekeeping: fold the single-key legacy history into the per-org key
@@ -1560,6 +1646,7 @@ app.whenReady().then(async () => {
   }
 
   createMainWindow();
+  ensureLinuxDesktopIntegration();
   // Avoid creating temporary tray icons during startup when tray stats are disabled.
   if (store.get('settings.showTrayStats', false)) {
     createTray();

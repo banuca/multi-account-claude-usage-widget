@@ -1571,9 +1571,11 @@ let dangerThreshold = 90;
 
 async function loadSettings() {
     const settings = await window.electronAPI.getSettings();
-    const isLinux = window.electronAPI.platform === 'linux';
     const isPortable = window.electronAPI.isPortable;
-    const autoStartUnsupported = isLinux || isPortable;
+    // Autostart works on Linux too now (implemented via the XDG autostart spec
+    // in main.js) — only portable Windows builds can't support it reliably,
+    // since autorun via registry breaks when the exe path changes per version.
+    const autoStartUnsupported = isPortable;
 
     elements.autoStartToggle.checked = autoStartUnsupported ? false : settings.autoStart;
     elements.autoStartToggle.disabled = autoStartUnsupported;
@@ -1582,9 +1584,7 @@ async function loadSettings() {
     }
     if (elements.autoStartHint) {
         elements.autoStartHint.style.display = autoStartUnsupported ? 'inline' : 'none';
-        elements.autoStartHint.textContent = isPortable
-            ? 'Not supported in portable mode!'
-            : 'Not supported on Linux';
+        elements.autoStartHint.textContent = 'Not supported in portable mode!';
     }
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
@@ -1618,7 +1618,7 @@ async function saveSettings() {
     dangerThreshold = danger;
 
     const settings = {
-        autoStart: (window.electronAPI.platform === 'linux' || window.electronAPI.isPortable) ? false : elements.autoStartToggle.checked,
+        autoStart: window.electronAPI.isPortable ? false : elements.autoStartToggle.checked,
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,

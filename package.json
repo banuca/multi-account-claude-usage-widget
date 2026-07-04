@@ -68,11 +68,27 @@
             "x64",
             "arm64"
           ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
-      "icon": "assets/logo.png",
+      "icon": "assets/icons/",
       "category": "Utility",
-      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+      "synopsis": "Desktop widget for monitoring Claude.ai usage",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Name": "Claude Usage Widget",
+          "Comment": "Monitor Claude.ai usage across accounts",
+          "Categories": "Utility;",
+          "StartupWMClass": "Claude-Usage-Widget"
+        }
+      }
     }
   }
 }
