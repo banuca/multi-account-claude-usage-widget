@@ -1,5 +1,6 @@
 // Application state
 let updateInterval = null;
+let autoUpdateStopped = true;
 let countdownInterval = null;
 let isExpanded = false;
 let usageChart = null;
@@ -1339,18 +1340,36 @@ function showMainContent() {
 // Auto-update management
 function startAutoUpdate() {
     stopAutoUpdate();
+    autoUpdateStopped = false;
+
+    const runAutoUpdate = async () => {
+        if (autoUpdateStopped) return;
+
+        const settings = window._cachedSettings || {};
+        const intervalSecs = parseInt(settings.refreshInterval) || 300;
+
+        try {
+            if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
+            await pollAllAccounts();
+        } catch (error) {
+            console.error('Auto-update failed:', error);
+        } finally {
+            if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
+            if (!autoUpdateStopped) {
+                updateInterval = setTimeout(runAutoUpdate, intervalSecs * 1000);
+            }
+        }
+    };
+
     const settings = window._cachedSettings || {};
     const intervalSecs = parseInt(settings.refreshInterval) || 300;
-    updateInterval = setInterval(async () => {
-        if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await pollAllAccounts();
-        if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
-    }, intervalSecs * 1000);
+    updateInterval = setTimeout(runAutoUpdate, intervalSecs * 1000);
 }
 
 function stopAutoUpdate() {
+    autoUpdateStopped = true;
     if (updateInterval) {
-        clearInterval(updateInterval);
+        clearTimeout(updateInterval);
         updateInterval = null;
     }
 }
@@ -1577,7 +1596,7 @@ async function loadSettings() {
     }
     if (elements.autoStartHint) {
         elements.autoStartHint.style.display = autoStartUnsupported ? 'inline' : 'none';
-        elements.autoStartHint.textContent = 'Not supported in portable mode!';
+        elements.autoStartHint.textContent = 'Portable builds: use shell:startup to launch at sign-in.';
     }
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;

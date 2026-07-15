@@ -25,9 +25,43 @@ const BLOCKED_SIGNATURES = [
   { pattern: '<html', error: 'UnexpectedHTML' },
 ];
 
+function safeClose(win) {
+  if (win && !win.isDestroyed()) {
+    win.close();
+  }
+}
+
+function validateApiNavigation(targetUrl, expectedUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    const expected = new URL(expectedUrl);
+    return parsed.origin === expected.origin && parsed.pathname.startsWith('/api/');
+  } catch {
+    return false;
+  }
+}
+
+function createFetchWindow(partition) {
+  const win = new BrowserWindow({
+    width: 800,
+    height: 600,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+      ...(partition ? { partition } : {})
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  return win;
+}
+
 /**
  * Parse and validate response body text
- * @param {string} bodyText - Raw body text from the page * @returns {Object} Parsed JSON data
+ * @param {string} bodyText - Raw body text from the page
+ * @returns {Object} Parsed JSON data
  * @throws {Error} If blocked signatures detected or JSON parsing fails
  */
 function parseResponseBody(bodyText) {
@@ -58,53 +92,59 @@ function parseResponseBody(bodyText) {
  */
 function fetchViaWindow(url, { timeoutMs = 30000, partition } = {}) {
   return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({
-      width: 800,
-      height: 600,
-      show: false,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        ...(partition ? { partition } : {})
-      }
-    });
+    const win = createFetchWindow(partition);
+    let settled = false;
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      safeClose(win);
+      reject(error);
+    }
+
+    function succeed(data) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      safeClose(win);
+      resolve(data);
+    }
 
     const timeout = setTimeout(() => {
-      win.close();
-      reject(new Error('Request timeout'));
+      fail(new Error('RequestTimeout'));
     }, timeoutMs);
+
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+      if (!validateApiNavigation(targetUrl, url)) {
+        event.preventDefault();
+        fail(new Error(`UnexpectedNavigation: ${targetUrl}`));
+      }
+    });
 
     win.webContents.on('did-finish-load', async () => {
       try {
         const bodyText = await win.webContents.executeJavaScript(
           'document.body.innerText || document.body.textContent'
         );
-        clearTimeout(timeout);
-        win.close();
-
-        const data = parseResponseBody(bodyText);
-        resolve(data);
+        succeed(parseResponseBody(bodyText));
       } catch (err) {
-        clearTimeout(timeout);
-        win.close();
-        reject(err);
+        fail(err);
       }
     });
 
     win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-      clearTimeout(timeout);
-      win.close();
-      reject(new Error(`LoadFailed: ${errorCode} ${errorDescription}`));
+      fail(new Error(`LoadFailed: ${errorCode} ${errorDescription}`));
     });
 
-    win.loadURL(url);
+    win.loadURL(url).catch(fail);
   });
 }
 
 /**
  * Fetch multiple URLs sequentially using a single reused BrowserWindow
  * This reduces memory overhead by avoiding repeated window creation/destruction
- * 
+ *
  * @param {string[]} urls - Array of URLs to fetch
  * @param {Object} options - Options object
  * @param {number} options.timeoutMs - Per-request timeout in milliseconds (default: 10000)
@@ -114,74 +154,78 @@ function fetchViaWindow(url, { timeoutMs = 30000, partition } = {}) {
  */
 function fetchMultipleViaWindow(urls, { timeoutMs = 10000, partition } = {}) {
   return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({
-      width: 800,
-      height: 600,
-      show: false,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        ...(partition ? { partition } : {})
-      }
-    });
-
+    const win = createFetchWindow(partition);
     const results = [];
     let currentIndex = 0;
     let currentTimeout = null;
+    let settled = false;
+
+    function clearCurrentTimeout() {
+      if (currentTimeout) {
+        clearTimeout(currentTimeout);
+        currentTimeout = null;
+      }
+    }
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      clearCurrentTimeout();
+      safeClose(win);
+      reject(error);
+    }
+
+    function finish() {
+      if (settled) return;
+      settled = true;
+      clearCurrentTimeout();
+      safeClose(win);
+      resolve(results);
+    }
 
     /**
      * Load the next URL in the sequence
      */
     function loadNext() {
       if (currentIndex >= urls.length) {
-        // All URLs fetched successfully
-        win.close();
-        resolve(results);
+        finish();
         return;
       }
 
       const url = urls[currentIndex];
-      
+
       currentTimeout = setTimeout(() => {
-        win.close();
-        reject(new Error(`Request timeout for URL ${currentIndex}: ${url}`));
+        fail(new Error(`RequestTimeout at URL ${currentIndex}: ${url}`));
       }, timeoutMs);
 
-      win.loadURL(url);
+      win.loadURL(url).catch(fail);
     }
+
+    win.webContents.on('will-navigate', (event, targetUrl) => {
+      const expectedUrl = urls[currentIndex];
+      if (expectedUrl && !validateApiNavigation(targetUrl, expectedUrl)) {
+        event.preventDefault();
+        fail(new Error(`UnexpectedNavigation at URL ${currentIndex}: ${targetUrl}`));
+      }
+    });
 
     win.webContents.on('did-finish-load', async () => {
       try {
         const bodyText = await win.webContents.executeJavaScript(
           'document.body.innerText || document.body.textContent'
         );
-        
-        if (currentTimeout) {
-          clearTimeout(currentTimeout);
-          currentTimeout = null;
-        }
 
-        const data = parseResponseBody(bodyText);
-        results.push(data);
+        clearCurrentTimeout();
+        results.push(parseResponseBody(bodyText));
         currentIndex++;
         loadNext();
       } catch (err) {
-        if (currentTimeout) {
-          clearTimeout(currentTimeout);
-          currentTimeout = null;
-        }
-        win.close();
-        reject(err);
+        fail(err);
       }
     });
 
     win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-      if (currentTimeout) {
-        clearTimeout(currentTimeout);
-        currentTimeout = null;
-      }
-      win.close();
-      reject(new Error(`LoadFailed at URL ${currentIndex}: ${errorCode} ${errorDescription}`));
+      fail(new Error(`LoadFailed at URL ${currentIndex}: ${errorCode} ${errorDescription}`));
     });
 
     // Start loading the first URL

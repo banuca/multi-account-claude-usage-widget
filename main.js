@@ -58,6 +58,12 @@ let mainWindow = null;
 let sessionTray = null;  // Tray icon for Session usage
 let weeklyTray = null;   // Tray icon for Weekly usage
 
+// Prevent portable/startup/manual launches from creating competing app instances.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
 // Latest usage payload per account id, keyed by account id. Drives the tray
 // rollup (worst account) and the per-account tooltip/menu. In-memory only —
 // rebuilt as each account is polled.
@@ -734,6 +740,67 @@ function showMainWindowClean() {
   mainWindow.focus();
 }
 
+function trayExists(tray) {
+  return !!tray && !tray.isDestroyed();
+}
+
+function hasRestoreTray() {
+  return trayExists(sessionTray) || trayExists(weeklyTray);
+}
+
+function wantsRestoreTray() {
+  return store.get('settings.minimizeToTray', false) || store.get('settings.showTrayStats', false);
+}
+
+function trayIconPath() {
+  return path.join(
+    __dirname,
+    process.platform === 'darwin'
+      ? 'assets/tray-icon-mac.png'
+      : process.platform === 'linux'
+        ? 'assets/tray-icon-linux.png'
+        : 'assets/tray-icon.png'
+  );
+}
+
+function wireTrayClick(tray) {
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.hide();
+      } else {
+        showMainWindowClean();
+      }
+    } else {
+      createMainWindow();
+    }
+  });
+}
+
+function destroyTray(tray) {
+  if (!tray || tray.isDestroyed()) return;
+
+  try {
+    tray.removeAllListeners();
+    tray.setContextMenu(null);
+    tray.setToolTip('');
+
+    // On Linux, some appindicator hosts repaint stale tray entries lazily.
+    // Clearing the image before destroy gives the host an explicit update.
+    if (process.platform === 'linux') {
+      tray.setImage(nativeImage.createEmpty());
+    }
+  } catch (error) {
+    console.error('Failed to clear tray icon:', error);
+  }
+
+  try {
+    tray.destroy();
+  } catch (error) {
+    console.error('Failed to destroy tray icon:', error);
+  }
+}
+
 // Build the tray context menu: one (disabled) detail line per account with its
 // session/weekly numbers — the "full detail" popup — plus the shared controls.
 function buildTrayMenu() {
@@ -773,53 +840,37 @@ function buildTrayMenu() {
 }
 
 function createTray() {
-  // Respect the tray stats setting even when createTray is called from generic refresh paths.
-  if (!store.get('settings.showTrayStats', false)) {
+  const showTrayStats = store.get('settings.showTrayStats', false);
+  const needsRestoreTray = wantsRestoreTray();
+
+  if (!needsRestoreTray) {
     destroyTrayIcons();
     return;
   }
 
-  // Rebuild from a clean state if only one of the two stats tray icons survived.
-  const hasSessionTray = sessionTray && !sessionTray.isDestroyed();
-  const hasWeeklyTray = weeklyTray && !weeklyTray.isDestroyed();
-  if (hasSessionTray && hasWeeklyTray) return;
-  if (hasSessionTray || hasWeeklyTray) destroyTrayIcons();
-
   try {
-    const staticIconPath = path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png');
-    
-    // Create Weekly tray icon FIRST (left position, blue)
-    weeklyTray = new Tray(staticIconPath);
-    weeklyTray.setToolTip('Weekly Usage');
-    
-    // Create Session tray icon SECOND (right position, purple)
-    sessionTray = new Tray(staticIconPath);
-    sessionTray.setToolTip('Session Usage');
-
+    const staticIconPath = trayIconPath();
     const contextMenu = buildTrayMenu();
-    sessionTray.setContextMenu(contextMenu);
-    weeklyTray.setContextMenu(contextMenu);
 
-    // Click handlers - swapped order
-        weeklyTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
+    if (showTrayStats) {
+      // Stats mode uses two tray badges: weekly first (left), session second (right).
+      if (!trayExists(weeklyTray)) {
+        weeklyTray = new Tray(staticIconPath);
+        wireTrayClick(weeklyTray);
       }
-    });
-    
-        sessionTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
-      }
-    });
+      weeklyTray.setToolTip('Weekly Usage');
+      weeklyTray.setContextMenu(contextMenu);
+    } else {
+      destroyTray(weeklyTray);
+      weeklyTray = null;
+    }
+
+    if (!trayExists(sessionTray)) {
+      sessionTray = new Tray(staticIconPath);
+      wireTrayClick(sessionTray);
+    }
+    sessionTray.setToolTip(showTrayStats ? 'Session Usage' : 'Claude Usage Widget');
+    sessionTray.setContextMenu(contextMenu);
   } catch (error) {
     console.error('Failed to create tray:', error);
   }
@@ -832,27 +883,7 @@ function destroyTrayIcons() {
   weeklyTray = null;
 
   for (const tray of trays) {
-    if (!tray || tray.isDestroyed()) continue;
-
-    try {
-      tray.removeAllListeners();
-      tray.setContextMenu(null);
-      tray.setToolTip('');
-
-      // On Linux, some appindicator hosts repaint stale tray entries lazily.
-      // Clearing the image before destroy gives the host an explicit update.
-      if (process.platform === 'linux') {
-        tray.setImage(nativeImage.createEmpty());
-      }
-    } catch (error) {
-      console.error('Failed to clear tray icon:', error);
-    }
-
-    try {
-      tray.destroy();
-    } catch (error) {
-      console.error('Failed to destroy tray icon:', error);
-    }
+    destroyTray(tray);
   }
 }
 
@@ -908,28 +939,20 @@ function trayTooltipLines() {
 function updateTrayRollup() {
   const showTrayStats = store.get('settings.showTrayStats', false);
 
-  if (!showTrayStats) {
-    // Destroy only weeklyTray, keeping sessionTray alive as a persistent restore
-    // icon. Without it, hide() on Windows leaves no way to restore the window.
-    // Apply the same Linux appindicator cleanup that destroyTrayIcons() uses.
-    if (weeklyTray && !weeklyTray.isDestroyed()) {
-      try {
-        weeklyTray.removeAllListeners();
-        weeklyTray.setContextMenu(null);
-        weeklyTray.setToolTip('');
-        if (process.platform === 'linux') weeklyTray.setImage(nativeImage.createEmpty());
-        weeklyTray.destroy();
-      } catch (_) {}
-      weeklyTray = null;
-    }
+  if (!wantsRestoreTray()) {
+    destroyTrayIcons();
     return;
   }
 
-  // Recreate tray icons if they were destroyed
-  if (!sessionTray || sessionTray.isDestroyed() || !weeklyTray || weeklyTray.isDestroyed()) {
-    createTray();
+  // Keep a restore tray available when minimize-to-tray is enabled, even if
+  // usage stat badges are disabled. In restore-only mode, only sessionTray is kept.
+  createTray();
+
+  if (!showTrayStats) {
+    return;
   }
-  if ((!sessionTray || sessionTray.isDestroyed()) && (!weeklyTray || weeklyTray.isDestroyed())) return;
+
+  if (!trayExists(sessionTray) || !trayExists(weeklyTray)) return;
 
   const warnThreshold = store.get('settings.warnThreshold', 75);
   const dangerThreshold = store.get('settings.dangerThreshold', 90);
@@ -1125,7 +1148,10 @@ ipcMain.on('minimize-window', () => {
       mainWindow.minimize();
     } else {
       const minimizeToTray = store.get('settings.minimizeToTray', false);
-      if (minimizeToTray) {
+      if (minimizeToTray && wantsRestoreTray()) {
+        createTray();
+      }
+      if (minimizeToTray && hasRestoreTray()) {
         mainWindow.hide();
       } else {
         mainWindow.minimize();
@@ -1299,13 +1325,12 @@ ipcMain.handle('save-settings', (event, settings) => {
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
 
-  if (!settings.showTrayStats) {
-    // Remove tray icons immediately when the setting is turned off from the UI.
-    destroyTrayIcons();
-  } else {
-    // Refresh the tray rollup immediately with new threshold settings. When no
-    // account has been polled yet this just (re)creates the empty tray icons.
+  if (wantsRestoreTray()) {
+    // Refresh tray state immediately. This preserves a single restore tray when
+    // stats are disabled but minimize-to-tray is enabled.
     updateTrayRollup();
+  } else {
+    destroyTrayIcons();
   }
 
   return true;
@@ -1624,6 +1649,7 @@ function setLinuxAutostart(enabled) {
 }
 
 // App lifecycle
+if (gotTheLock) {
 app.whenReady().then(async () => {
   // History housekeeping: fold the single-key legacy history into the per-org key
   // (still keyed off any legacy organizationId, before migrateLegacyAccount deletes it).
@@ -1647,8 +1673,12 @@ app.whenReady().then(async () => {
 
   createMainWindow();
   ensureLinuxDesktopIntegration();
-  // Avoid creating temporary tray icons during startup when tray stats are disabled.
-  if (store.get('settings.showTrayStats', false)) {
+  if (process.platform === 'linux' && store.get('settings.autoStart', false)) {
+    setLinuxAutostart(true);
+  }
+  // Create a tray at startup when either stats are shown or the tray is needed
+  // as the restore path for minimize-to-tray.
+  if (wantsRestoreTray()) {
     createTray();
   }
 
@@ -1675,14 +1705,14 @@ app.whenReady().then(async () => {
     }
   }, 5000);
 });
+}
 
 app.on('window-all-closed', () => {
   // Keep running in tray — but only if a tray icon actually exists to restore
   // from. With showTrayStats off there is no tray, so an OS-level window close
   // (Alt+F4, WM close) would otherwise leave a headless process with no way
   // to reopen it.
-  const hasTray = sessionTray && !sessionTray.isDestroyed();
-  if (!hasTray) app.quit();
+  if (!hasRestoreTray()) app.quit();
 });
 
 app.on('activate', () => {
@@ -1695,15 +1725,10 @@ app.on('activate', () => {
   }
 });
 
-// Prevent multiple instances
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-}
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindowClean();
+  } else if (gotTheLock) {
+    createMainWindow();
+  }
+});
