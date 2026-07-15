@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Desktop widget for monitoring Claude.ai usage across multiple accounts",
   "main": "main.js",
   "scripts": {

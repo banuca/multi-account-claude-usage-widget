@@ -1,12 +1,17 @@
-﻿name: Build Windows (Setup + Portable)
+name: Build Windows (Setup + Portable)
+run-name: ${{ github.workflow }} · ${{ github.ref_name }}
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main, 'claude/**', work]
     tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:

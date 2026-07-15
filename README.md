@@ -9,7 +9,7 @@ A beautiful, freely resizable desktop widget for **Windows and Linux** that trac
 ## Contents
 
 - [Features](#features)
-- [What's New in v2.0.0](#whats-new-in-v200)
+- [What's New in v2.1.0](#whats-new-in-v210)
 - [Settings](#settings)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -42,7 +42,14 @@ A beautiful, freely resizable desktop widget for **Windows and Linux** that trac
 
 ---
 
-## What's New in v2.0.0
+## What's New in v2.1.0
+
+### Reliability fixes for portable and long-running sessions
+
+- Prevented duplicate app instances from competing when launched from startup/manual shortcuts.
+- Kept minimize-to-tray recoverable even when usage-stat tray badges are disabled.
+- Hardened background usage fetch windows and made auto-refresh non-overlapping.
+
 
 ### 🖱️ Free resize by dragging
 
