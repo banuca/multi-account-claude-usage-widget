@@ -14,7 +14,7 @@ Unofficial. Not affiliated with Anthropic or OpenAI.
 | --- | --- |
 | Windows 10/11 x64 | `...-win-Setup.exe` (installer) or `...-win-portable.exe` (no install) |
 | Linux x64 / arm64 | `...-linux-*.AppImage` or `...-linux-*.deb` |
-| macOS | not released yet — see below |
+| macOS arm64 / Intel | `...-mac-*.dmg` or `...-mac-*.zip` — **experimental**, see below |
 
 Every build is **unsigned**, because code signing needs a paid certificate:
 
@@ -28,18 +28,22 @@ Every build is **unsigned**, because code signing needs a paid certificate:
 | Windows x64 | yes | yes | yes |
 | Linux x64 | yes | yes | yes |
 | Linux arm64 | yes | yes | yes |
-| macOS arm64 / x64 | yes | partly | **no** |
+| macOS arm64 / Intel | yes | partly | experimental |
 
 Every build and launch test runs on a real machine of that architecture in CI —
 nothing is cross-built and assumed.
 
-**Why macOS is held back.** On macOS the app asks the system Keychain to store
-its encryption key, and macOS shows an "allow access to your Keychain?" prompt.
-That is normal, and a signed app gets asked once. Without a Developer ID
-signature the prompt can return on every launch, which is a poor enough
-experience that shipping it would be worse than not shipping it. Everything else
-passes on real Apple Silicon — the full failure-path suite and package
-inspection — so this is a signing problem, not a code one.
+**Why macOS is experimental.** On macOS the app asks the system Keychain to
+store its encryption key, and macOS shows an "allow access to your Keychain?"
+prompt. That is normal — a signed app gets asked once. This build is unsigned,
+so the prompt may return on every launch, and macOS will also need
+**right-click → Open** the first time to get past Gatekeeper.
+
+Everything else passes on real Apple Silicon: the full failure-path suite and
+package inspection. But the automated launch test has to bypass that prompt to
+run at all, so **nobody has yet confirmed the app behaves correctly after a real
+person clicks Allow**. That is why it is marked experimental rather than
+supported. A Developer ID signature is what would close this.
 
 ## What it does
 
