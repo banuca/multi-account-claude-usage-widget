@@ -199,12 +199,20 @@ jobs:
           # the one thing the JS watchdog can never tell us.
           (
             sleep 50
-            pid=$(pgrep -f 'AI-Usage-Monitor' | head -1 || true)
-            if [ -n "$pid" ]; then
-              echo "sampling still-running pid $pid" | tee test-results/hang-sample.txt
-              sample "$pid" 5 -file test-results/hang-sample.txt 2>&1 || true
+            # -x matches the PROCESS NAME, not the command line. `pgrep -f`
+            # matched the node harness, whose argv contains the app's path, and
+            # sampled the test runner sitting in spawnSync instead of the app.
+            pids=$(pgrep -x 'AI-Usage-Monitor' || true)
+            if [ -n "$pids" ]; then
+              echo "app pids still running: $pids" > test-results/hang-sample.txt
+              for pid in $pids; do
+                echo "=== sample of pid $pid ===" >> test-results/hang-sample.txt
+                sample "$pid" 5 -file /tmp/sample-$pid.txt >/dev/null 2>&1 || true
+                cat /tmp/sample-$pid.txt >> test-results/hang-sample.txt 2>/dev/null || true
+              done
+              ps -Ao pid,ppid,stat,command | grep -i 'usage-monitor' | grep -v grep                 >> test-results/hang-sample.txt 2>&1 || true
             else
-              echo "no process still running at 50s - no hang to sample" > test-results/hang-sample.txt
+              echo "no app process still running at 50s - no hang to sample" > test-results/hang-sample.txt
             fi
           ) &
           sampler=$!
