@@ -270,7 +270,9 @@ jobs:
           mkdir -p "$HOME/.local/share/keyrings"
           eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
           export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
-          node test/packaged-smoke.cjs --exe "$unpacked/claude-usage-widget" --out test-results/packaged-unpacked
+          # The renderer fires its update check 2s after startup COMPLETES, and
+          # under llvmpipe that is well past the default 20s capture window.
+          SMOKE_SCREENSHOT_MS=45000 node test/packaged-smoke.cjs --exe "$unpacked/claude-usage-widget" --out test-results/packaged-unpacked
           SCRIPT
           chmod +x /tmp/run-packaged.sh
           xvfb-run --auto-servernum --server-args='-screen 0 1600x1200x24' \
@@ -298,7 +300,7 @@ jobs:
           mkdir -p "$HOME/.local/share/keyrings"
           eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
           export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
-          APPIMAGE_EXTRACT_AND_RUN=1 node test/packaged-smoke.cjs --exe "$appimage" --out test-results/packaged-appimage
+          APPIMAGE_EXTRACT_AND_RUN=1 SMOKE_SCREENSHOT_MS=45000 node test/packaged-smoke.cjs --exe "$appimage" --out test-results/packaged-appimage
           SCRIPT
           chmod +x /tmp/run-appimage.sh
           xvfb-run --auto-servernum --server-args='-screen 0 1600x1200x24' \

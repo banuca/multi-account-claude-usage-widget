@@ -143,7 +143,9 @@ function launch(label) {
     env,
     encoding: 'utf8',
     stdio: 'ignore',
-    timeout: 90000,
+    // Comfortably clear of the capture delay plus startup, so a slow
+    // software-rendered runner is not mistaken for a hang.
+    timeout: Math.max(90000, (parseInt(process.env.SMOKE_SCREENSHOT_MS, 10) || 20000) + 75000),
     // SIGKILL, not the default SIGTERM. A windowed app can ignore SIGTERM, and
     // then spawnSync's timeout never fires and the run hangs until the CI job
     // is killed - which is exactly what both macOS jobs did. SIGKILL cannot be

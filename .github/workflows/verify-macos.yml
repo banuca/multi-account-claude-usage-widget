@@ -171,20 +171,48 @@ jobs:
       # so the Keychain ACL is satisfied without a prompt. It is NOT a Developer
       # ID, it is applied AFTER the step that refuses one, and it is applied to
       # the copy under test only - the uploaded artifacts are the unsigned build.
-      - name: Ad-hoc sign the copy under test, so the Keychain does not block it
+      # electron-builder already ad-hoc signs a macOS build with no identity, so
+      # re-signing changed nothing and is not repeated. What the previous run
+      # did NOT have is an unlocked keychain: safeStorage is synchronous on
+      # macOS, and a Keychain request that cannot be satisfied blocks the
+      # calling thread - which matches a main thread that stopped dead after
+      # "app ready" and never ran its own watchdog.
+      - name: Create and unlock a throwaway keychain
         run: |
           set -eu
-          app=$(ls -d dist/mac*/*.app | head -1)
-          codesign --force --deep --sign - "$app"
-          codesign -dv --verbose=2 "$app" 2>&1 | tee -a test-results/codesign.txt
-          echo "ad-hoc signature applied for the launch test only" >> test-results/codesign.txt
+          security create-keychain -p ci-temp-keychain ci.keychain
+          security set-keychain-settings -t 3600 -u ci.keychain
+          security unlock-keychain -p ci-temp-keychain ci.keychain
+          security list-keychains -d user -s ci.keychain $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s ci.keychain
+          security list-keychains -d user
 
       - name: Launch the packaged application twice on a synthetic profile
         run: |
           app=$(ls -d dist/mac*/*.app | head -1)
           binary="$app/Contents/MacOS/AI-Usage-Monitor"
           ls -l "$binary"
-          node test/packaged-smoke.cjs --exe "$binary" --out test-results/packaged-app
+          mkdir -p test-results
+          # A blocked main thread cannot report on itself from JavaScript, so if
+          # the app is still alive well after it should have finished, take a
+          # NATIVE stack sample. That names the call it is stuck in, which is
+          # the one thing the JS watchdog can never tell us.
+          (
+            sleep 50
+            pid=$(pgrep -f 'AI-Usage-Monitor' | head -1 || true)
+            if [ -n "$pid" ]; then
+              echo "sampling still-running pid $pid" | tee test-results/hang-sample.txt
+              sample "$pid" 5 -file test-results/hang-sample.txt 2>&1 || true
+            else
+              echo "no process still running at 50s - no hang to sample" > test-results/hang-sample.txt
+            fi
+          ) &
+          sampler=$!
+          node test/packaged-smoke.cjs --exe "$binary" --out test-results/packaged-app || launch_status=$?
+          wait "$sampler" 2>/dev/null || true
+          echo "--- hang sample (head) ---"
+          head -60 test-results/hang-sample.txt 2>/dev/null || echo "no sample written"
+          exit "${launch_status:-0}"
 
       - name: Responsive design captures
         run: npm run test:electron:screens -- test-results/screenshots
