@@ -1,0 +1,164 @@
+{
+  "name": "claude-usage-widget",
+  "version": "3.0.0",
+  "description": "AI Usage Monitor - a minimal desktop widget for monitoring Claude.ai and ChatGPT usage across multiple accounts, with manual-only tracking",
+  "main": "main.js",
+  "scripts": {
+    "build": "electron-builder",
+    "build:linux": "electron-builder --linux",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "pack:dir": "electron-builder --dir",
+    "start": "electron .",
+    "test": "node test/account-logic.test.js && node test/add-account-flow.test.js && node test/provider-cancellation.test.js && node test/usage-reading.test.js && node test/usage-status-renderer.test.js && node test/storage-safety.test.js && node test/window-and-updates.test.js && node test/account-lifecycle.test.js",
+    "test:electron": "electron test/electron-cancel-smoke.js",
+    "test:electron:all": "npm run test:electron && npm run test:electron:usage && npm run test:electron:reader && npm run test:electron:failures",
+    "test:electron:failures": "node test/run-failure-phases.cjs",
+    "test:electron:reader": "electron test/electron-provider-reader-smoke.js",
+    "test:electron:screens": "electron test/electron-screenshot-probe.js",
+    "test:electron:usage": "electron test/electron-usage-status-smoke.js"
+  },
+  "keywords": [
+    "claude",
+    "usage",
+    "widget",
+    "electron"
+  ],
+  "author": "Bhanuka Kirinde (banuca) <banuca@users.noreply.github.com>",
+  "license": "MIT",
+  "copyright": "Copyright © 2026 Bhanuka Kirinde",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "44.3.0",
+    "electron-builder": "^26.16.1"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "electron-store": "^8.1.0"
+  },
+  "build": {
+    "appId": "com.claudeusage.widget",
+    "productName": "AI-Usage-Monitor",
+    "copyright": "Copyright © 2026 Bhanuka Kirinde",
+    "publish": null,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-portable.${ext}",
+      "unpackDirName": "ai-usage-monitor"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-${version}-win-Setup.${ext}"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "LICENSE",
+      "src/**/*",
+      "assets/icon.ico",
+      "assets/icon.icns",
+      "assets/icons/**/*",
+      "assets/tray-icon.png",
+      "assets/tray-icon-mac.png",
+      "assets/tray-icon-linux.png",
+      "node_modules/**/*",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.md",
+      "!**/{test,tests,__tests__,spec,example,examples,docs,doc}/**",
+      "!**/{.eslintrc,.eslintrc.js,.eslintrc.json,.editorconfig,.nycrc,.prettierrc}",
+      "!**/{CHANGELOG,HISTORY,AUTHORS,CONTRIBUTORS}*"
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/",
+      "category": "Utility",
+      "synopsis": "AI Usage Monitor - desktop widget for Claude.ai and ChatGPT usage",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Name": "AI Usage Monitor",
+          "Comment": "Monitor Claude.ai and ChatGPT usage across accounts",
+          "Categories": "Utility;",
+          "StartupWMClass": "AI-Usage-Monitor"
+        }
+      },
+      "maintainer": "Bhanuka Kirinde <banuca@users.noreply.github.com>",
+      "description": "AI Usage Monitor - a minimal desktop widget for monitoring Claude.ai and ChatGPT usage across multiple accounts, with manual-only tracking"
+    },
+    "electronVersion": "44.3.0",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.utilities",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": null,
+      "minimumSystemVersion": "13.0",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libsecret-1-0"
+      ]
+    }
+  }
+}

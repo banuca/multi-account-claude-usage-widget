@@ -1,0 +1,192 @@
+name: Verify macOS (arm64 + x64)
+
+# Verification only: no tag trigger, no release step, --publish=never.
+#
+# Both architectures get a NATIVE job: macos-15 runners are Apple Silicon and
+# macos-15-intel runners are Intel, so each package is built and launched on the
+# architecture it targets rather than cross-built and assumed.
+#
+# Runner labels are not taken on trust. macos-13 (the previous Intel label) was
+# retired by GitHub in 2025, and a retired or re-pointed label does not fail -
+# it silently gives you the other architecture, and the job then cross-builds
+# and calls the result native. The first step therefore asserts the runner's
+# real architecture, and the build is checked again afterwards against the
+# Mach-O header of the binary that was actually produced.
+#   https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/
+#   https://github.com/actions/runner-images#available-images
+#
+# Nothing here is signed or notarized. There is no signing identity in this
+# project, CSC_IDENTITY_AUTO_DISCOVERY is switched off so electron-builder
+# cannot silently pick up whatever is in the runner's keychain, and the
+# artifacts are labelled unsigned. Signing and notarization remain a separate,
+# explicitly authorized step.
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            uname: arm64
+          - arch: x64
+            runner: macos-15-intel
+            uname: x86_64
+
+    env:
+      # Never reach for an ambient certificate.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - name: Assert this runner really is macOS ${{ matrix.arch }}
+        run: |
+          set -eu
+          echo "runner label: ${{ matrix.runner }}"
+          sw_vers
+          echo "uname -m: $(uname -m)"
+          echo "uname -s: $(uname -s)"
+          test "$(uname -s)" = "Darwin"
+          # Rosetta would report the emulated architecture, so check the
+          # hardware translation flag too: a translated shell means this job is
+          # not running natively on the architecture it claims.
+          translated=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
+          echo "sysctl.proc_translated: $translated"
+          test "$translated" = "0"
+          if [ "$(uname -m)" != "${{ matrix.uname }}" ]; then
+            echo "::error::runner ${{ matrix.runner }} reports $(uname -m), not ${{ matrix.uname }} —"\
+                 "this job would cross-build and call it native. Check the current runner-images table."
+            exit 1
+          fi
+          echo "native ${{ matrix.arch }} runner confirmed"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Assert the toolchain satisfies package.json engines
+        run: |
+          echo "node $(node -v) / npm $(npm -v)"
+          echo "app requires    $(node -p "require('./package.json').engines.node")"
+          sw_vers
+          node -e "const [maj,min]=process.versions.node.split('.').map(Number); if (maj<22 || (maj===22 && min<12)) { console.error('Node ' + process.versions.node + ' is below the 22.12.0 Electron 44 requires'); process.exit(1); }"
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: Confirm the Electron binary was provisioned
+        run: |
+          expected=$(node -p "require('./package.json').devDependencies.electron")
+          actual=$(node -p "require('./node_modules/electron/package.json').version")
+          echo "electron package $actual (expected $expected)"
+          test "$actual" = "$expected"
+          node -e "const p=require('electron'); const fs=require('fs'); if(!fs.existsSync(p)) { console.error('electron binary missing at ' + p); process.exit(1); } console.log('electron binary', p);"
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Syntax check every entry point
+        run: |
+          for f in main.js preload.js src/renderer/app.js src/providers.js src/usage-status.js \
+                   src/manual-entry.js src/config-recovery.js src/credential-store.js \
+                   src/platform-paths.js src/read-errors.js; do
+            node --check "$f" && echo "ok  $f"
+          done
+
+      # macOS runners have a real window server and a login keychain, so the
+      # suites run directly. They isolate HOME, XDG_* and Electron's own path
+      # table before startup and assert that isolation, which is what makes it
+      # safe to run them against a real keychain: a credential written here
+      # goes to the runner's throwaway keychain, never to a user's.
+      - name: Electron suites (cancellation, usage status, provider reader)
+        run: |
+          npm run test:electron
+          npm run test:electron:usage
+          npm run test:electron:reader
+
+      - name: Failure-path suites
+        run: node test/run-failure-phases.cjs --out test-results/failure-phases
+
+      - name: Build the ${{ matrix.arch }} packages
+        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish=never
+
+      - name: Confirm the build is unsigned, and say so
+        run: |
+          app=$(ls -d dist/mac*/*.app | head -1)
+          echo "inspecting $app"
+          codesign -dv --verbose=2 "$app" 2>&1 | tee test-results/codesign.txt || true
+          if codesign -dv "$app" 2>&1 | grep -qi 'Authority=Developer ID'; then
+            echo "::error::this build carries a Developer ID signature, which this workflow does not authorize"
+            exit 1
+          fi
+          echo "unsigned development build, as expected" >> test-results/codesign.txt
+
+      - name: Assert the built binary is ${{ matrix.arch }}, natively
+        run: |
+          set -eu
+          app=$(ls -d dist/mac*/*.app | head -1)
+          binary="$app/Contents/MacOS/AI-Usage-Monitor"
+          file "$binary" | tee test-results/binary-arch.txt
+          archs=$(lipo -archs "$binary")
+          echo "lipo -archs: $archs" | tee -a test-results/binary-arch.txt
+          expected='${{ matrix.uname }}'
+          case "$expected" in
+            arm64)  test "$archs" = "arm64" ;;
+            x86_64) test "$archs" = "x86_64" ;;
+          esac
+          echo "the package matches the architecture of the machine that built and ran it" \
+            >> test-results/binary-arch.txt
+
+      - name: Verify what is actually inside the package
+        run: |
+          app=$(ls -d dist/mac*/*.app | head -1)
+          node test/verify-package-contents.cjs --app "$app" --source . --out test-results/package
+
+      - name: Launch the packaged application twice on a synthetic profile
+        run: |
+          app=$(ls -d dist/mac*/*.app | head -1)
+          binary="$app/Contents/MacOS/AI-Usage-Monitor"
+          ls -l "$binary"
+          node test/packaged-smoke.cjs --exe "$binary" --out test-results/packaged-app
+
+      - name: Responsive design captures
+        run: npm run test:electron:screens -- test-results/screenshots
+
+      - name: Dependency audit (reported, never auto-fixed)
+        run: |
+          npm audit --json > test-results/npm-audit.json || true
+          npm audit || echo "::warning::npm audit reported findings — see test-results/npm-audit.json"
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-macos-${{ matrix.arch }}-evidence
+          path: test-results/
+          if-no-files-found: warn
+
+      - name: Upload the macOS ${{ matrix.arch }} packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Usage-Monitor-mac-${{ matrix.arch }}-unsigned
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
