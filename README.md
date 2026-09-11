@@ -4,8 +4,6 @@ A small desktop widget that shows how much of your Claude and ChatGPT usage limi
 
 Unofficial. Not affiliated with Anthropic or OpenAI.
 
-![The widget showing three accounts and the usage graph](assets/screenshot-main.png)
-
 ## Download
 
 **[Latest release →](../../releases/latest)**
