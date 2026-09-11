@@ -241,7 +241,8 @@ const summary1 = parseSummary(first.output);
 
 record('the packaged application starts and exits cleanly',
   first.run.status === 0 && !first.run.error,
-  `exit=${first.run.status} ${first.run.error ? `error=${first.run.error.message}` : ''}`);
+  `exit=${first.run.status}${first.run.signal ? ` signal=${first.run.signal}` : ''}`
+    + ` ${first.run.error ? `error=${first.run.error.message}` : ''}`);
 
 record('it reports its identity from inside the package',
   !!identity1,
@@ -294,7 +295,8 @@ const afterSecond = readUsedConfig(identity2 || identity1);
 
 record('the packaged application starts a second time on the same profile',
   second.run.status === 0 && !second.run.error,
-  `exit=${second.run.status} ${second.run.error ? `error=${second.run.error.message}` : ''}`);
+  `exit=${second.run.status}${second.run.signal ? ` signal=${second.run.signal}` : ''}`
+    + ` ${second.run.error ? `error=${second.run.error.message}` : ''}`);
 
 record('the account survives a full process restart',
   !!summary2 && summary2.accountCards === 1 && Array.isArray(summary2.pctTexts) && summary2.pctTexts.includes('50%'),

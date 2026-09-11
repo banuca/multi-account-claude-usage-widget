@@ -240,6 +240,17 @@ jobs:
           echo "inspecting $unpacked"
           node test/verify-package-contents.cjs --app "$unpacked" --source . --out test-results/package
 
+      # The BUILT package ships its own copy of the SUID sandbox helper, and
+      # configuring the one in node_modules did nothing for it. Electron aborts
+      # rather than run unsandboxed, so the packaged app died by signal before
+      # it could log anything at all.
+      - name: Configure the packaged Electron sandbox helper
+        run: |
+          unpacked=$(ls -d dist/linux*unpacked | head -1)
+          sudo chown root:root "$unpacked/chrome-sandbox"
+          sudo chmod 4755 "$unpacked/chrome-sandbox"
+          ls -l "$unpacked/chrome-sandbox"
+
       - name: Launch the packaged application twice on a synthetic profile
         run: |
           unpacked=$(ls -d dist/linux*unpacked | head -1)

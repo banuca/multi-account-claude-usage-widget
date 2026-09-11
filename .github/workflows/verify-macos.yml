@@ -161,6 +161,24 @@ jobs:
           app=$(ls -d dist/mac*/*.app | head -1)
           node test/verify-package-contents.cjs --app "$app" --source . --out test-results/package
 
+      # Why this step exists. A packaged macOS app with no code identity gets a
+      # BLOCKING Keychain prompt the first time it touches safeStorage. On a
+      # headless runner nobody can click it: the main thread stops, and the
+      # measured symptom was a log that ended at "[Smoke] app ready" with even
+      # the smoke watchdog never firing.
+      #
+      # An ad-hoc signature (`--sign -`) gives the bundle a stable code identity
+      # so the Keychain ACL is satisfied without a prompt. It is NOT a Developer
+      # ID, it is applied AFTER the step that refuses one, and it is applied to
+      # the copy under test only - the uploaded artifacts are the unsigned build.
+      - name: Ad-hoc sign the copy under test, so the Keychain does not block it
+        run: |
+          set -eu
+          app=$(ls -d dist/mac*/*.app | head -1)
+          codesign --force --deep --sign - "$app"
+          codesign -dv --verbose=2 "$app" 2>&1 | tee -a test-results/codesign.txt
+          echo "ad-hoc signature applied for the launch test only" >> test-results/codesign.txt
+
       - name: Launch the packaged application twice on a synthetic profile
         run: |
           app=$(ls -d dist/mac*/*.app | head -1)
