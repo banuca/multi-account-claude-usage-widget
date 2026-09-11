@@ -184,13 +184,36 @@ try {
   record('the licence text ships and is readable', false, err.message);
 }
 
-// Electron's own licences sit beside the executable, not in the asar.
-const electronLicences = fs.existsSync(appDir)
-  ? fs.readdirSync(appDir).filter((f) => /^LICENSE/i.test(f))
-  : [];
+// Electron's own licences sit beside the executable, not in the asar - except
+// on macOS, where a .app bundle has no loose files at its root and they live
+// inside the Electron Framework instead. Looking only beside the executable
+// failed the macOS package for a layout Apple requires.
+function findElectronLicences(dir, depth) {
+  if (depth < 0 || !fs.existsSync(dir)) return [];
+  let found = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (_) {
+    return [];
+  }
+  for (const entry of entries) {
+    if (entry.isFile() && /^LICENSE/i.test(entry.name)) {
+      found.push(path.relative(appDir, path.join(dir, entry.name)).replace(/\\/g, '/'));
+    } else if (entry.isDirectory() && depth > 0) {
+      // Only the framework/resource directories, so this cannot wander into
+      // the application's own files and report one of those.
+      if (/^(Contents|Frameworks|Resources|Versions|[A-Z].*\.framework|A)$/.test(entry.name)) {
+        found = found.concat(findElectronLicences(path.join(dir, entry.name), depth - 1));
+      }
+    }
+  }
+  return found;
+}
+const electronLicences = findElectronLicences(appDir, 6);
 record('Electron\'s own licence files ship alongside the application',
   electronLicences.length > 0,
-  electronLicences.length ? electronLicences.join(', ') : `nothing matching LICENSE* in ${appDir}`);
+  electronLicences.length ? electronLicences.slice(0, 4).join(', ') : `nothing matching LICENSE* under ${appDir}`);
 
 // ── The packaged package.json must describe the app, not the toolchain ────
 try {

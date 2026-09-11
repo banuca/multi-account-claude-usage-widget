@@ -118,11 +118,54 @@ jobs:
       # that bus so safeStorage has something to talk to. No --no-sandbox and
       # no skipping: the suites isolate HOME, XDG_* and Electron's own path
       # table themselves and assert that isolation before they start.
+      # Prove the keyring BEFORE anything depends on it. Without a real secret
+      # service, Electron's safeStorage falls back to "basic_text" - obfuscation
+      # with a hard-coded key - and this app deliberately REFUSES to store a
+      # credential there. A run without a keyring therefore exercises the
+      # refusal path and reports it as a credential failure three minutes later.
+      - name: Prove a real keyring is available to safeStorage
+        run: |
+          cat > /tmp/check-keyring.sh <<'SCRIPT'
+          set -e
+          # gnome-keyring needs a keyring to exist before it can unlock one, and
+          # the daemon's environment must reach the processes that follow.
+          mkdir -p "$HOME/.local/share/keyrings"
+          eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
+          export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+          node -e "
+            const { spawnSync } = require('child_process');
+            const probe = 'const {app,safeStorage}=require(\'electron\');' +
+              'app.whenReady().then(()=>{console.log(JSON.stringify({' +
+              'available:safeStorage.isEncryptionAvailable(),' +
+              'backend:(safeStorage.getSelectedStorageBackend&&safeStorage.getSelectedStorageBackend())||null' +
+              '}));app.exit(0);});';
+            require('fs').writeFileSync('/tmp/keyring-probe.js', probe);
+            const r = spawnSync(require('electron'), ['/tmp/keyring-probe.js'], { encoding: 'utf8' });
+            process.stdout.write(r.stdout + r.stderr);
+            const m = /\{\"available\".*\}/.exec(r.stdout || '');
+            if (!m) { console.error('the keyring probe produced no report'); process.exit(1); }
+            const s = JSON.parse(m[0]);
+            console.log('safeStorage:', JSON.stringify(s));
+            if (!s.available || s.backend === 'basic_text') {
+              console.error('::error::no usable keyring: safeStorage reports ' + JSON.stringify(s) +
+                '. The Electron suites need a real secret service; basic_text is refused by design.');
+              process.exit(1);
+            }
+          "
+          SCRIPT
+          chmod +x /tmp/check-keyring.sh
+          xvfb-run --auto-servernum --server-args='-screen 0 1600x1200x24' \
+            dbus-run-session -- /tmp/check-keyring.sh
+
       - name: Electron suites (cancellation, usage status, provider reader)
         run: |
           cat > /tmp/run-suites.sh <<'SCRIPT'
           set -e
-          echo -n 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11
+          # gnome-keyring needs a keyring to exist before it can unlock one, and
+          # the daemon's environment must reach the processes that follow.
+          mkdir -p "$HOME/.local/share/keyrings"
+          eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
+          export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
           npm run test:electron
           npm run test:electron:usage
           npm run test:electron:reader
@@ -135,7 +178,11 @@ jobs:
         run: |
           cat > /tmp/run-failures.sh <<'SCRIPT'
           set -e
-          echo -n 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11
+          # gnome-keyring needs a keyring to exist before it can unlock one, and
+          # the daemon's environment must reach the processes that follow.
+          mkdir -p "$HOME/.local/share/keyrings"
+          eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
+          export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
           node test/run-failure-phases.cjs --out test-results/failure-phases
           SCRIPT
           chmod +x /tmp/run-failures.sh
@@ -169,7 +216,11 @@ jobs:
           unpacked=$(ls -d dist/linux*unpacked | head -1)
           cat > /tmp/run-packaged.sh <<SCRIPT
           set -e
-          echo -n 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11
+          # gnome-keyring needs a keyring to exist before it can unlock one, and
+          # the daemon's environment must reach the processes that follow.
+          mkdir -p "$HOME/.local/share/keyrings"
+          eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
+          export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
           node test/packaged-smoke.cjs --exe "$unpacked/claude-usage-widget" --out test-results/packaged-unpacked
           SCRIPT
           chmod +x /tmp/run-packaged.sh
@@ -184,7 +235,11 @@ jobs:
           # still executes the packaged binary from inside the image.
           cat > /tmp/run-appimage.sh <<SCRIPT
           set -e
-          echo -n 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11
+          # gnome-keyring needs a keyring to exist before it can unlock one, and
+          # the daemon's environment must reach the processes that follow.
+          mkdir -p "$HOME/.local/share/keyrings"
+          eval "$(printf '%s' 'ci-test-keyring' | gnome-keyring-daemon --unlock --components=secrets,pkcs11 --daemonize --replace)"
+          export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
           APPIMAGE_EXTRACT_AND_RUN=1 node test/packaged-smoke.cjs --exe "$appimage" --out test-results/packaged-appimage
           SCRIPT
           chmod +x /tmp/run-appimage.sh

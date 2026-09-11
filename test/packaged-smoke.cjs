@@ -57,7 +57,12 @@ const optionOf = (name) => {
 // process rather than a launch.
 const exeArg = optionOf('--exe');
 const exe = exeArg ? path.resolve(exeArg) : exeArg;
-const outDir = optionOf('--out') || path.join(os.tmpdir(), `usage-packaged-smoke-${process.pid}`);
+// Resolved for the same reason --exe is. Every path handed to the packaged
+// app is derived from this one, and the app runs with its own cwd - so a
+// relative --out made SMOKE_LOG resolve against the CHILD's directory, the
+// app wrote its report somewhere nobody read, and every check that needed
+// that report failed against a process that had actually started fine.
+const outDir = path.resolve(optionOf('--out') || path.join(os.tmpdir(), `usage-packaged-smoke-${process.pid}`));
 if (!exe) {
   console.error('usage: node test/packaged-smoke.cjs --exe <path> [--out <dir>]');
   process.exit(64);
