@@ -91,6 +91,18 @@ jobs:
           test "$actual" = "$expected"
           node -e "const p=require('electron'); const fs=require('fs'); if(!fs.existsSync(p)) { console.error('electron binary missing at ' + p); process.exit(1); } console.log('electron binary', p, fs.statSync(p).size, 'bytes');"
 
+      # Electron ships a SUID sandbox helper that must be owned by root with
+      # mode 4755. On a fresh runner it is neither, and Electron ABORTS rather
+      # than run without a sandbox - which is the correct behaviour, so the fix
+      # is to configure the helper rather than to pass --no-sandbox and test the
+      # app in a state no user will run it in.
+      - name: Configure Electron's SUID sandbox helper
+        run: |
+          sandbox=node_modules/electron/dist/chrome-sandbox
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
+          ls -l "$sandbox"
+
       - name: Unit tests
         run: npm test
 

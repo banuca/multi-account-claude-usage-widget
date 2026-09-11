@@ -51,7 +51,12 @@ const optionOf = (name) => {
   return i === -1 ? null : args[i + 1];
 };
 
-const exe = optionOf('--exe');
+// Resolved against the working directory: spawnSync on Windows rejects a
+// relative program path with ENOENT, which is how a CI invocation that
+// passed `dist/win-unpacked/...exe` produced 27 failures and an empty
+// process rather than a launch.
+const exeArg = optionOf('--exe');
+const exe = exeArg ? path.resolve(exeArg) : exeArg;
 const outDir = optionOf('--out') || path.join(os.tmpdir(), `usage-packaged-smoke-${process.pid}`);
 if (!exe) {
   console.error('usage: node test/packaged-smoke.cjs --exe <path> [--out <dir>]');
