@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "AI Usage Monitor - a minimal desktop widget for monitoring Claude.ai and ChatGPT usage across multiple accounts, with manual-only tracking",
   "main": "main.js",
   "scripts": {

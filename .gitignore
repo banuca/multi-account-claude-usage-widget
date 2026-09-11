@@ -71,3 +71,12 @@ commit_msg.txt
 # Pre-edit source snapshots (kept outside the repo, alongside the review
 # evidence, so an old copy of main.js cannot be mistaken for the current one)
 snapshot-pre-edit/
+
+# The icon SOURCE (assets/icon-source/*.svg) IS committed on purpose: it is what
+# the shipped .ico/.icns/PNGs are generated from, and without it the only copy
+# of the design is a binary. It is not packaged - build.files lists the raster
+# assets explicitly, not assets/**.
+
+# Scratch images a design subagent wrote into the project root during the icon
+# workflow. Never part of a release.
+preview*.png
