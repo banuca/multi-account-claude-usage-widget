@@ -3529,7 +3529,27 @@ if (process.env.SMOKE_SCREENSHOT) {
   app.whenReady().then(() => smokeLog('[Smoke] app ready'));
 
   const delayMs = parseInt(process.env.SMOKE_SCREENSHOT, 10) || 8000;
+
+  // A watchdog, because a hook that hangs reports nothing at all. The macOS
+  // packaged run stopped after "app ready" and was still alive when the
+  // launcher gave up 90 seconds later, so the only evidence was a timeout.
+  // This fires well before any launcher timeout, says what the hook had
+  // reached, and leaves - so a hang becomes a legible failure rather than a
+  // stalled job.
+  let smokeStage = 'waiting for the capture delay';
+  const smokeWatchdog = setTimeout(() => {
+    smokeLog('[Smoke] WATCHDOG: giving up while ' + smokeStage
+      + ' — ' + JSON.stringify({
+        hasWindow: !!(mainWindow && !mainWindow.isDestroyed()),
+        windows: BrowserWindow.getAllWindows().length,
+        ready: app.isReady()
+      }));
+    app.exit(75);
+  }, delayMs + 45000);
+  if (smokeWatchdog.unref) smokeWatchdog.unref();
+
   setTimeout(async () => {
+    smokeStage = 'writing the identity record';
     // Identity facts the packaged smoke asserts: the version must be the APP's
     // (not the Electron runtime's) and the profile must be the one the launcher
     // pointed at. Written BEFORE the capture, so a capture that fails still
@@ -3542,6 +3562,8 @@ if (process.env.SMOKE_SCREENSHOT) {
       packaged: app.isPackaged,
       hasWindow: !!(mainWindow && !mainWindow.isDestroyed())
     }));
+    clearTimeout(smokeWatchdog);
+    smokeStage = 'running the lifecycle checks';
     // ── The real IPC seam, exercised inside the packaged process ─────────
     //
     // Opt-in with SMOKE_LIFECYCLE=1. Everything below runs in the SHIPPED

@@ -2650,12 +2650,30 @@ app.whenReady().then(async () => {
       // The suite really did save preferences (directly and through the graph
       // preference), and every one of those saves went to the interception
       // rather than the user's Run key.
-      record(
-        'the suite\u2019s real preference saves went to the intercepted startup setter, never the OS',
-        loginItemGuard.installed === true && loginItemGuard.calls.length > 0
-          && loginItemGuard.calls.every((c) => c && c.openAtLogin === false),
-        `intercepted ${loginItemGuard.calls.length} call(s), all openAtLogin=false`
-      );
+      if (process.platform === 'linux') {
+        // Electron's setLoginItemSettings does nothing on Linux, so the app
+        // writes an XDG autostart entry instead. The equivalent proof is that
+        // no entry reached the real home directory: XDG_CONFIG_HOME points
+        // into this suite's own profile, and the real one must be untouched.
+        const realAutostart = path.join(
+          process.env.REAL_HOME || os.homedir(), '.config', 'autostart');
+        const strayEntries = fs.existsSync(realAutostart)
+          ? fs.readdirSync(realAutostart).filter((f) => /usage|monitor|claude/i.test(f))
+          : [];
+        record(
+          'the suite registered nothing for startup in the real home directory',
+          loginItemGuard.installed === true && strayEntries.length === 0,
+          `installed=${loginItemGuard.installed} strayEntries=${strayEntries.join(', ') || 'none'}`
+            + ` (Linux uses XDG autostart, not setLoginItemSettings)`
+        );
+      } else {
+        record(
+          'the suite\u2019s real preference saves went to the intercepted startup setter, never the OS',
+          loginItemGuard.installed === true && loginItemGuard.calls.length > 0
+            && loginItemGuard.calls.every((c) => c && c.openAtLogin === false),
+          `intercepted ${loginItemGuard.calls.length} call(s), all openAtLogin=false`
+        );
+      }
     } else {
       record('the Settings connection action could be exercised', false, 'no renderer window');
     }
