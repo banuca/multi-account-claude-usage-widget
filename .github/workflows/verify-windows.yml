@@ -19,6 +19,8 @@ jobs:
   verify:
     name: Windows x64
     runs-on: windows-latest
+    # A hung step must not hold a runner for hours.
+    timeout-minutes: 45
 
     steps:
       - name: Assert this runner really is Windows x64

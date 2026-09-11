@@ -120,7 +120,13 @@ function launch(label) {
     // The app's own opt-in hook: capture the renderer after this many ms, log
     // a DOM summary and quit. A packaged Windows build has no console, so the
     // hook is also given a file to write to and a directory to capture into.
-    SMOKE_SCREENSHOT: '12000',
+    // How long the app waits before capturing its renderer and quitting.
+    // 12s was tight enough to flake on a loaded machine - the run finished
+    // before the capture landed and reported "no screenshot written" for a
+    // window that had rendered perfectly well. CI runners are slower than a
+    // developer's desktop, and this still sits well inside the 90s launch
+    // timeout below.
+    SMOKE_SCREENSHOT: process.env.SMOKE_SCREENSHOT_MS || '20000',
     SMOKE_LOG: path.join(cwd, 'smoke.log'),
     SMOKE_OUT: cwd,
     // Drive the account/IPC lifecycle through the shipped preload as well.
@@ -137,7 +143,12 @@ function launch(label) {
     env,
     encoding: 'utf8',
     stdio: 'ignore',
-    timeout: 90000
+    timeout: 90000,
+    // SIGKILL, not the default SIGTERM. A windowed app can ignore SIGTERM, and
+    // then spawnSync's timeout never fires and the run hangs until the CI job
+    // is killed - which is exactly what both macOS jobs did. SIGKILL cannot be
+    // ignored, so the timeout is real on every platform.
+    killSignal: 'SIGKILL'
   });
   // The file the app wrote is the authoritative record; stdout is empty for a
   // GUI subsystem binary on Windows.

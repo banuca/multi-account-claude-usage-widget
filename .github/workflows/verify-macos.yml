@@ -35,6 +35,8 @@ jobs:
   verify:
     name: macOS ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    # A hung step must not hold a runner for hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

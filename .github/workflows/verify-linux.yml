@@ -21,6 +21,8 @@ jobs:
   verify:
     name: Linux ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    # A hung step must not hold a runner for hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +129,15 @@ jobs:
         run: |
           cat > /tmp/check-keyring.sh <<'SCRIPT'
           set -e
+          # Chromium chooses its password store from the DESKTOP ENVIRONMENT,
+          # not from whether a secret service happens to be running: with no
+          # XDG_CURRENT_DESKTOP it selects "basic_text" and never asks libsecret
+          # at all. A headless runner sets neither variable, which is why the
+          # keyring was running and safeStorage still reported basic_text.
+          # Declaring GNOME makes the autodetection pick gnome-libsecret, the
+          # same store a real GNOME desktop uses.
+          export XDG_CURRENT_DESKTOP=GNOME
+          export DESKTOP_SESSION=gnome
           # gnome-keyring needs a keyring to exist before it can unlock one, and
           # the daemon's environment must reach the processes that follow.
           mkdir -p "$HOME/.local/share/keyrings"
@@ -161,6 +172,15 @@ jobs:
         run: |
           cat > /tmp/run-suites.sh <<'SCRIPT'
           set -e
+          # Chromium chooses its password store from the DESKTOP ENVIRONMENT,
+          # not from whether a secret service happens to be running: with no
+          # XDG_CURRENT_DESKTOP it selects "basic_text" and never asks libsecret
+          # at all. A headless runner sets neither variable, which is why the
+          # keyring was running and safeStorage still reported basic_text.
+          # Declaring GNOME makes the autodetection pick gnome-libsecret, the
+          # same store a real GNOME desktop uses.
+          export XDG_CURRENT_DESKTOP=GNOME
+          export DESKTOP_SESSION=gnome
           # gnome-keyring needs a keyring to exist before it can unlock one, and
           # the daemon's environment must reach the processes that follow.
           mkdir -p "$HOME/.local/share/keyrings"
@@ -178,6 +198,15 @@ jobs:
         run: |
           cat > /tmp/run-failures.sh <<'SCRIPT'
           set -e
+          # Chromium chooses its password store from the DESKTOP ENVIRONMENT,
+          # not from whether a secret service happens to be running: with no
+          # XDG_CURRENT_DESKTOP it selects "basic_text" and never asks libsecret
+          # at all. A headless runner sets neither variable, which is why the
+          # keyring was running and safeStorage still reported basic_text.
+          # Declaring GNOME makes the autodetection pick gnome-libsecret, the
+          # same store a real GNOME desktop uses.
+          export XDG_CURRENT_DESKTOP=GNOME
+          export DESKTOP_SESSION=gnome
           # gnome-keyring needs a keyring to exist before it can unlock one, and
           # the daemon's environment must reach the processes that follow.
           mkdir -p "$HOME/.local/share/keyrings"
@@ -216,6 +245,15 @@ jobs:
           unpacked=$(ls -d dist/linux*unpacked | head -1)
           cat > /tmp/run-packaged.sh <<SCRIPT
           set -e
+          # Chromium chooses its password store from the DESKTOP ENVIRONMENT,
+          # not from whether a secret service happens to be running: with no
+          # XDG_CURRENT_DESKTOP it selects "basic_text" and never asks libsecret
+          # at all. A headless runner sets neither variable, which is why the
+          # keyring was running and safeStorage still reported basic_text.
+          # Declaring GNOME makes the autodetection pick gnome-libsecret, the
+          # same store a real GNOME desktop uses.
+          export XDG_CURRENT_DESKTOP=GNOME
+          export DESKTOP_SESSION=gnome
           # gnome-keyring needs a keyring to exist before it can unlock one, and
           # the daemon's environment must reach the processes that follow.
           mkdir -p "$HOME/.local/share/keyrings"
@@ -235,6 +273,15 @@ jobs:
           # still executes the packaged binary from inside the image.
           cat > /tmp/run-appimage.sh <<SCRIPT
           set -e
+          # Chromium chooses its password store from the DESKTOP ENVIRONMENT,
+          # not from whether a secret service happens to be running: with no
+          # XDG_CURRENT_DESKTOP it selects "basic_text" and never asks libsecret
+          # at all. A headless runner sets neither variable, which is why the
+          # keyring was running and safeStorage still reported basic_text.
+          # Declaring GNOME makes the autodetection pick gnome-libsecret, the
+          # same store a real GNOME desktop uses.
+          export XDG_CURRENT_DESKTOP=GNOME
+          export DESKTOP_SESSION=gnome
           # gnome-keyring needs a keyring to exist before it can unlock one, and
           # the daemon's environment must reach the processes that follow.
           mkdir -p "$HOME/.local/share/keyrings"
