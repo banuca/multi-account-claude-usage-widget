@@ -138,7 +138,28 @@ function launch(label) {
   // parent's pipes, and at least one of them outlives the main process, so a
   // piped spawnSync waits for an EOF that never comes and reports ETIMEDOUT
   // for a run that actually succeeded. The app's own log file is the record.
-  const run = spawnSync(exe, [`--user-data-dir=${configDir}`], {
+  // macOS: --use-mock-keychain.
+  //
+  // WHY, precisely. A native stack sample of the hung app showed the main
+  // thread inside:
+  //     SecItemAdd -> SecKeychainItemCreateFromContent
+  //       -> StorageManager::defaultKeychainUI -> makeLoginAuthUI -> mach_msg
+  // The packaged app asks macOS to store its encryption key, macOS raises an
+  // "allow access to your Keychain?" dialog, and an automated runner has nobody
+  // to click Allow - so it waits forever. That is macOS asking permission, not
+  // a defect, and it is the same prompt a real user answers once.
+  //
+  // WHAT THIS COSTS. For this launch only, Chromium uses an in-memory keychain,
+  // so these checks do not exercise the real macOS Keychain. That behaviour is
+  // covered elsewhere and on the real thing: the failure-path suite's
+  // keychain-unavailable, legacy-locked and legacy-locked-restart phases all
+  // run against the genuine Keychain and pass on macOS. What this launch is
+  // for - that the PACKAGED app starts, finds its assets, wires its preload,
+  // renders, and keeps data across a restart - is unaffected.
+  const args = [`--user-data-dir=${configDir}`];
+  if (process.platform === 'darwin') args.push('--use-mock-keychain');
+
+  const run = spawnSync(exe, args, {
     cwd,
     env,
     encoding: 'utf8',

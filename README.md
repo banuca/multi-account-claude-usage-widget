@@ -10,18 +10,36 @@ Unofficial. Not affiliated with Anthropic or OpenAI.
 
 **[Latest release →](../../releases/latest)**
 
-- `AI-Usage-Monitor-3.0.0-win-Setup.exe` — installer
-- `AI-Usage-Monitor-3.0.0-win-portable.exe` — no install needed
+| Platform | File |
+| --- | --- |
+| Windows 10/11 x64 | `...-win-Setup.exe` (installer) or `...-win-portable.exe` (no install) |
+| Linux x64 / arm64 | `...-linux-*.AppImage` or `...-linux-*.deb` |
+| macOS | not released yet — see below |
 
-Windows 10/11 x64. The builds are **unsigned**, so SmartScreen warns on first run: **More info → Run anyway**.
+Every build is **unsigned**, because code signing needs a paid certificate:
+
+- **Windows** — SmartScreen warns on first run: **More info → Run anyway**.
+- **Linux** — AppImage needs `chmod +x` first; `.deb` installs with `sudo apt install ./<file>.deb`.
 
 ## Platforms
 
-| | Status |
-| --- | --- |
-| Windows x64 | Released and tested |
-| macOS | Builds in CI, **not released** — not yet verified on real hardware |
-| Linux | Builds in CI, **not released** — not yet verified on real hardware |
+| | Built | Launch-tested | Released |
+| --- | --- | --- | --- |
+| Windows x64 | yes | yes | yes |
+| Linux x64 | yes | yes | yes |
+| Linux arm64 | yes | yes | yes |
+| macOS arm64 / x64 | yes | partly | **no** |
+
+Every build and launch test runs on a real machine of that architecture in CI —
+nothing is cross-built and assumed.
+
+**Why macOS is held back.** On macOS the app asks the system Keychain to store
+its encryption key, and macOS shows an "allow access to your Keychain?" prompt.
+That is normal, and a signed app gets asked once. Without a Developer ID
+signature the prompt can return on every launch, which is a poor enough
+experience that shipping it would be worse than not shipping it. Everything else
+passes on real Apple Silicon — the full failure-path suite and package
+inspection — so this is a signing problem, not a code one.
 
 ## What it does
 
